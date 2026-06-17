@@ -49,7 +49,7 @@ ToolParamsWidget::ToolParamsWidget(const QString &toolName,
                              QAbstractItemView::SelectedClicked |
                              QAbstractItemView::AnyKeyPressed);
     m_table->setAlternatingRowColors(true);
-    m_table->setShowGrid(true);
+    m_table->setShowGrid(false);
     m_table->horizontalHeader()->setStretchLastSection(false);
     m_table->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
     m_table->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Stretch);

@@ -86,14 +86,14 @@ Theme militaryTech()
     t.headerSectionBg = "#0d130d";
     t.headerSectionColor = "#8fbf5a";
     t.headerSectionBorder = "#2a3a2a";
-    t.confirmBtnBg = "#1a2a14";
-    t.confirmBtnText = "#8fbf5a";
-    t.confirmBtnBorder = "#4a6a3a";
-    t.confirmBtnHoverBg = "#2a4a1a";
-    t.confirmBtnHoverBorder = "#8fbf5a";
-    t.confirmBtnHoverText = "#c8d4c0";
-    t.confirmBtnPressedBg = "#4a6a3a";
-    t.confirmBtnPressedText = "#0a0e0a";
+    t.confirmBtnBg = "#5a8a3a";      // 实心主操作色（军工绿）
+    t.confirmBtnText = "#ffffff";
+    t.confirmBtnBorder = "#5a8a3a";
+    t.confirmBtnHoverBg = "#6a9a4a";
+    t.confirmBtnHoverBorder = "#6a9a4a";
+    t.confirmBtnHoverText = "#ffffff";
+    t.confirmBtnPressedBg = "#4a7a2a";
+    t.confirmBtnPressedText = "#ffffff";
 
     t.inputBg = "#060906";
     t.inputText = "#c8d4c0";
@@ -198,14 +198,14 @@ Theme futureTechBlue()
     t.headerSectionBg = "#0a1428";
     t.headerSectionColor = "#00d4ff";
     t.headerSectionBorder = "#1a3a6a";
-    t.confirmBtnBg = "#0a2040";
-    t.confirmBtnText = "#00d4ff";
+    t.confirmBtnBg = "#0078ff";      // 实心主操作色（科技蓝）
+    t.confirmBtnText = "#ffffff";
     t.confirmBtnBorder = "#0078ff";
-    t.confirmBtnHoverBg = "#0a3060";
-    t.confirmBtnHoverBorder = "#00d4ff";
-    t.confirmBtnHoverText = "#c8e0ff";
-    t.confirmBtnPressedBg = "#0078ff";
-    t.confirmBtnPressedText = "#050a18";
+    t.confirmBtnHoverBg = "#1a88ff";
+    t.confirmBtnHoverBorder = "#1a88ff";
+    t.confirmBtnHoverText = "#ffffff";
+    t.confirmBtnPressedBg = "#0066dd";
+    t.confirmBtnPressedText = "#ffffff";
 
     t.inputBg = "#03060f";
     t.inputText = "#c8e0ff";
