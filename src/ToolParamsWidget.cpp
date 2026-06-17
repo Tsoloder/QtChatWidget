@@ -21,8 +21,8 @@ ToolParamsWidget::ToolParamsWidget(const QString &toolName,
     layout->setSpacing(6);
 
     // header
-    auto *title = new QLabel(QString::fromUtf8("\xe2\x9a\x99 ") + toolName +
-                             QStringLiteral("  \xe2\x80\x94 parameters"));
+    auto *title = new QLabel(QStringLiteral("[") + toolName +
+                             QStringLiteral("] parameters"));
     title->setObjectName("toolTitle");
     layout->addWidget(title);
 
@@ -73,7 +73,7 @@ ToolParamsWidget::ToolParamsWidget(const QString &toolName,
     auto *row = new QHBoxLayout;
     row->setContentsMargins(0, 0, 0, 0);
     row->setSpacing(8);
-    auto *confirm = new QPushButton(QString::fromUtf8("\xe2\x9c\x93 Confirm parameters"));
+    auto *confirm = new QPushButton(QStringLiteral("Confirm parameters"));
     confirm->setObjectName("confirmParamsBtn");
     confirm->setCursor(Qt::PointingHandCursor);
     confirm->setMinimumHeight(32);

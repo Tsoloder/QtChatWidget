@@ -76,7 +76,7 @@ ChatBubble::ChatBubble(Role role, const ContentSegments &segments, QWidget *pare
             pl->setContentsMargins(12, 10, 12, 10);
             pl->setSpacing(6);
 
-            auto *title = new QLabel(QString::fromUtf8("\xe2\x9a\x99 ") + seg.toolName); // gear + name
+            auto *title = new QLabel(QStringLiteral("[") + seg.toolName + QStringLiteral("]")); // name
             title->setObjectName("toolTitle");
             auto *desc = new QLabel(seg.toolDescription);
             desc->setObjectName("toolDesc");
