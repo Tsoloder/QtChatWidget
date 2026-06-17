@@ -34,6 +34,12 @@ SYSTEM_PROMPT = """你是一个编程助手。回答用户问题时，必须严�
    - "options": 让用户选择的按钮，结构为
        [{"label":"...","value":"...","style":"primary|default|danger"}, ...]
 
+重要约束：
+- JSON 块里的 value 字段不要塞入完整代码或大段文本，只放简短值（如文件路径、布尔值、数字）。
+  完整代码请放在前面的 ```代码块里展示，JSON 里只用 "<见上方代码块>" 之类的简短描述。
+- JSON 块必须放在回复的最末尾，且只能出现一次。
+- JSON 必须完整、可解析，不要被截断。
+
 示例格式：
 我先帮你分析了一下，建议这样修改：
 
@@ -48,7 +54,8 @@ int main() { return 0; }
   "tool_params": {
     "tool": "edit_file",
     "params": [
-      {"name": "path", "description": "目标文件路径", "value": "src/main.cpp"}
+      {"name": "path", "description": "目标文件路径", "value": "src/main.cpp"},
+      {"name": "backup", "description": "是否备份", "value": "true"}
     ]
   },
   "options": [
@@ -56,9 +63,7 @@ int main() { return 0; }
     {"label": "取消", "value": "cancel", "style": "danger"}
   ]
 }
-```
-
-注意：json 代码块必须放在回复的最末尾，且只能出现一次。"""
+```"""
 
 
 def call_model(user_question: str) -> str:
@@ -74,7 +79,7 @@ def call_model(user_question: str) -> str:
             {"role": "user",   "content": user_question},
         ],
         "temperature": 0.3,
-        "max_tokens": 2048,
+        "max_tokens": 8192,
     }
 
     print(f"[INFO] 请求接口: {CHAT_URL}")
@@ -112,6 +117,15 @@ def call_model(user_question: str) -> str:
         print("[ERROR] 无法解析返回结构，原始内容如下：")
         print(json.dumps(data, ensure_ascii=False, indent=2))
         sys.exit(1)
+
+    # 截断检测：finish_reason 为 length 表示被 max_tokens 截断
+    try:
+        finish = data["choices"][0].get("finish_reason", "")
+        if finish == "length":
+            print(f"[WARN] 回复被 max_tokens 截断 (finish_reason=length)，长度={len(content)}")
+            print("[WARN] 末尾可能没有完整的 ```json 闭合块，渲染会失败。")
+    except Exception:
+        pass
 
     return content
 

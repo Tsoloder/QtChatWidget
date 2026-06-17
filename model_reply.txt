@@ -1,30 +1,131 @@
-这是一个使用 C++ 计算斐波那契数列前 20 项的简单程序。我们将使用 `long long` 类型来防止整数溢出，并使用一个循环来迭代计算每一项。
+这是一个使用 `requests` 和 `BeautifulSoup` 爬取豆瓣电影 Top 250 的完整 Python 脚本。
 
-```cpp
-#include <iostream>
-#include <vector>
+### 方案说明
 
-int main() {
-    const int n = 20;
-    std::vector<long long> fib(n);
+1.  **请求库**：使用 `requests` 发送 HTTP 请求。
+2.  **解析库**：使用 `BeautifulSoup` 解析 HTML 内容。
+3.  **数据提取**：
+    *   遍历每部电影的信息。
+    *   提取排名、标题、评分、评价人数、简介等关键信息。
+    *   处理分页逻辑（每页 25 部，共 10 页）。
+4.  **反爬处理**：
+    *   添加常见的 User-Agent 头。
+    *   添加请求间隔，避免过于频繁被封锁。
+5.  **输出**：将结果打印到控制台，并可选择保存为 CSV 文件。
 
-    // 初始化前两项
-    if (n > 0) fib[0] = 0;
-    if (n > 1) fib[1] = 1;
+### 代码实现
 
-    // 计算后续项
-    for (int i = 2; i < n; ++i) {
-        fib[i] = fib[i - 1] + fib[i - 2];
-    }
+```python
+import requests
+from bs4 import BeautifulSoup
+import time
+import csv
+import os
 
-    // 输出结果
-    std::cout << "Fibonacci sequence (first " << n << " terms):" << std::endl;
-    for (int i = 0; i < n; ++i) {
-        std::cout << "F(" << i << ") = " << fib[i] << std::endl;
-    }
+class DoubanTop250Spider:
+    def __init__(self):
+        self.base_url = "https://movie.douban.com/top250"
+        self.headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+        self.movies = []
 
-    return 0;
-}
+    def get_page(self, start):
+        """获取单页 HTML 内容"""
+        url = f"{self.base_url}?start={start}&filter="
+        try:
+            response = requests.get(url, headers=self.headers, timeout=10)
+            response.raise_for_status()
+            response.encoding = response.apparent_encoding
+            return response.text
+        except requests.RequestException as e:
+            print(f"请求失败: {e}")
+            return None
+
+    def parse_page(self, html):
+        """解析单页 HTML，提取电影信息"""
+        if not html:
+            return []
+        
+        soup = BeautifulSoup(html, 'html.parser')
+        movie_items = soup.find_all('div', class_='item')
+        page_movies = []
+
+        for item in movie_items:
+            movie = {}
+            # 排名
+            movie['rank'] = item.find('em').text
+            
+            # 标题 (可能有其他语言标题，这里取主标题)
+            title_span = item.find('span', class_='title')
+            movie['title'] = title_span.text
+            
+            # 评分
+            rating_span = item.find('span', class_='rating_num')
+            movie['rating'] = rating_span.text if rating_span else 'N/A'
+            
+            # 评价人数
+            rating_people_span = item.find('div', class_='star')
+            if rating_people_span:
+                people_span = rating_people_span.find_all('span')[-1]
+                movie['people'] = people_span.text.replace('人评价', '')
+            else:
+                movie['people'] = 'N/A'
+                
+            # 简介 (可能为空)
+            quote_span = item.find('span', class_='inq')
+            movie['quote'] = quote_span.text if quote_span else 'N/A'
+            
+            # 链接
+            link = item.find('div', class_='hd').a['href']
+            movie['link'] = link
+            
+            page_movies.append(movie)
+            
+        return page_movies
+
+    def run(self, save_to_csv=False):
+        """运行爬虫"""
+        print("开始爬取豆瓣电影 Top 250...")
+        
+        for start in range(0, 250, 25):
+            print(f"正在爬取第 {start//25 + 1} 页...")
+            html = self.get_page(start)
+            if html:
+                movies = self.parse_page(html)
+                self.movies.extend(movies)
+                # 避免请求过快
+                time.sleep(1)
+            else:
+                print(f"第 {start//25 + 1} 页爬取失败，跳过。")
+                
+        print(f"爬取完成，共获取 {len(self.movies)} 部电影。")
+        
+        # 打印结果
+        for movie in self.movies:
+            print(f"排名: {movie['rank']}, 标题: {movie['title']}, 评分: {movie['rating']}, 简介: {movie['quote']}")
+            
+        # 保存为 CSV
+        if save_to_csv:
+            self.save_to_csv()
+            
+    def save_to_csv(self):
+        """保存数据到 CSV 文件"""
+        filename = 'douban_top250.csv'
+        with open(filename, 'w', newline='', encoding='utf-8-sig') as f:
+            if not self.movies:
+                print("没有数据可保存。")
+                return
+                
+            writer = csv.DictWriter(f, fieldnames=self.movies[0].keys())
+            writer.writeheader()
+            writer.writerows(self.movies)
+        print(f"数据已保存至 {filename}")
+
+if __name__ == '__main__':
+    spider = DoubanTop250Spider()
+    # 设置 save_to_csv=True 可以保存为 CSV 文件
+    spider.run(save_to_csv=False)
 ```
 
 请确认下面的参数并选择操作：
@@ -34,8 +135,8 @@ int main() {
   "tool_params": {
     "tool": "write_file",
     "params": [
-      {"name": "path", "description": "目标文件路径", "value": "src/fib.cpp"},
-      {"name": "content", "description": "文件内容", "value": "#include <iostream>\n#include <vector>\n\nint main() {\n    const int n = 20;\n    std::vector<long long> fib(n);\n\n    // 初始化前两项\n    if (n > 0) fib[0] = 0;\n    if (n > 1) fib[1] = 1;\n\n    // 计算后续项\n    for (int i = 2; i < n; ++i) {\n        fib[i] = fib[i - 1] + fib[i - 2];\n    }\n\n    // 输出结果\n    std::cout << \"Fibonacci sequence (first \" << n << \" terms):\" << std::endl;\n    for (int i = 0; i < n; ++i) {\n        std::cout << \"F(\" << i << \") = \" << fib[i] << std::endl;\n    }\n\n    return 0;\n}"}
+      {"name": "path", "description": "目标文件路径", "value": "spider/douban_top250.py"},
+      {"name": "content", "description": "文件内容", "value": "<见上方代码块>"}
     ]
   },
   "options": [
