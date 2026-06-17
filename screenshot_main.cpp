@@ -6,6 +6,9 @@
 #include <QPainter>
 #include <QVBoxLayout>
 #include <QWidget>
+#include <QFile>
+#include <QTextStream>
+#include <QFileInfo>
 #include "ChatWidget.h"
 #include "ChatBubble.h"
 #include "ContentSegment.h"
@@ -66,8 +69,24 @@ int main(int argc, char *argv[])
         ThemeId::WeChatLight,
     };
 
+    // 优先从 model_reply.txt 读取真实模型回复；不存在则用内置示例。
+    QString modelReply;
+    const QString replyPath = QStringLiteral("/workspace/model_reply.txt");
+    if (QFileInfo::exists(replyPath)) {
+        QFile f(replyPath);
+        if (f.open(QIODevice::ReadOnly | QIODevice::Text)) {
+            modelReply = QString::fromUtf8(f.readAll());
+            qInfo("Loaded model reply from %s (%d chars)",
+                  qPrintable(replyPath), modelReply.length());
+        }
+    }
+    if (modelReply.trimmed().isEmpty()) {
+        qInfo("model_reply.txt not found, using built-in sample.");
+        modelReply = QString::fromUtf8(kModelReply);
+    }
+
     // 用 parseAssistantReply 把"模型原始回复"解析成 ContentSegments
-    const ContentSegments segs = parseAssistantReply(QString::fromUtf8(kModelReply));
+    const ContentSegments segs = parseAssistantReply(modelReply);
 
     QVector<QImage> cells;
     const int cellW = 560;

@@ -1,0 +1,46 @@
+这是一个使用 C++ 计算斐波那契数列前 20 项的简单程序。我们将使用 `long long` 类型来防止整数溢出，并使用一个循环来迭代计算每一项。
+
+```cpp
+#include <iostream>
+#include <vector>
+
+int main() {
+    const int n = 20;
+    std::vector<long long> fib(n);
+
+    // 初始化前两项
+    if (n > 0) fib[0] = 0;
+    if (n > 1) fib[1] = 1;
+
+    // 计算后续项
+    for (int i = 2; i < n; ++i) {
+        fib[i] = fib[i - 1] + fib[i - 2];
+    }
+
+    // 输出结果
+    std::cout << "Fibonacci sequence (first " << n << " terms):" << std::endl;
+    for (int i = 0; i < n; ++i) {
+        std::cout << "F(" << i << ") = " << fib[i] << std::endl;
+    }
+
+    return 0;
+}
+```
+
+请确认下面的参数并选择操作：
+
+```json
+{
+  "tool_params": {
+    "tool": "write_file",
+    "params": [
+      {"name": "path", "description": "目标文件路径", "value": "src/fib.cpp"},
+      {"name": "content", "description": "文件内容", "value": "#include <iostream>\n#include <vector>\n\nint main() {\n    const int n = 20;\n    std::vector<long long> fib(n);\n\n    // 初始化前两项\n    if (n > 0) fib[0] = 0;\n    if (n > 1) fib[1] = 1;\n\n    // 计算后续项\n    for (int i = 2; i < n; ++i) {\n        fib[i] = fib[i - 1] + fib[i - 2];\n    }\n\n    // 输出结果\n    std::cout << \"Fibonacci sequence (first \" << n << \" terms):\" << std::endl;\n    for (int i = 0; i < n; ++i) {\n        std::cout << \"F(\" << i << \") = \" << fib[i] << std::endl;\n    }\n\n    return 0;\n}"}
+    ]
+  },
+  "options": [
+    {"label": "写入文件", "value": "write", "style": "primary"},
+    {"label": "取消", "value": "cancel", "style": "danger"}
+  ]
+}
+```
