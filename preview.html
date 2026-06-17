@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>Qwen3.6-35B-A3B 渲染结果预览</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+    background: #0d1117;
+    color: #c9d1d9;
+    padding: 24px;
+    min-height: 100vh;
+  }
+  h1 { font-size: 20px; margin-bottom: 8px; color: #58a6ff; }
+  .meta { color: #8b949e; font-size: 13px; margin-bottom: 20px; }
+  .card {
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 20px;
+  }
+  .card h2 { font-size: 15px; color: #7ee787; margin-bottom: 12px; }
+  img {
+    max-width: 100%;
+    height: auto;
+    border-radius: 8px;
+    border: 1px solid #30363d;
+    display: block;
+  }
+  .themes { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; margin-top: 12px; }
+  .theme-item { background: #21262d; padding: 10px 14px; border-radius: 6px; font-size: 13px; }
+  .theme-item strong { color: #58a6ff; }
+  .swatch { display: inline-block; width: 12px; height: 12px; border-radius: 2px; vertical-align: middle; margin-right: 6px; border: 1px solid rgba(255,255,255,0.2); }
+</style>
+</head>
+<body>
+  <h1>Qwen3.6-35B-A3B 回复渲染结果</h1>
+  <div class="meta">商业风格改良版 · 1744×752 · 5 主题对比 · 生成时间 2026-06-17</div>
+
+  <div class="card">
+    <h2>完整截图（5 主题网格）</h2>
+    <img src="screenshot.png" alt="渲染结果截图">
+  </div>
+
+  <div class="card">
+    <h2>本次提问</h2>
+    <p style="font-size:14px; line-height:1.6;">用 C++ 写一个快速排序算法的实现，要求支持泛型</p>
+  </div>
+
+  <div class="card">
+    <h2>5 主题 primary 按钮配色</h2>
+    <div class="themes">
+      <div class="theme-item"><span class="swatch" style="background:#5a8a3a"></span><strong>Military Tech</strong> · 军绿</div>
+      <div class="theme-item"><span class="swatch" style="background:#0078ff"></span><strong>Future Tech Blue</strong> · 科技蓝</div>
+      <div class="theme-item"><span class="swatch" style="background:#0066cc"></span><strong>White Minimal</strong> · 蓝</div>
+      <div class="theme-item"><span class="swatch" style="background:#61afef"></span><strong>One Dark Pro</strong> · VSCode蓝</div>
+      <div class="theme-item"><span class="swatch" style="background:#07C160"></span><strong>WeChat Light</strong> · 微信绿</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>改良要点</h2>
+    <ul style="font-size:13px; line-height:1.9; padding-left:20px; color:#8b949e;">
+      <li>选项按钮：扁平化、6px 圆角、去除左侧 accent 条纹</li>
+      <li>primary 按钮：实心主色填充 + 白字（5 主题统一）</li>
+      <li>表格：去网格线，靠交替行分隔</li>
+      <li>PARAMETER 标签：左侧齿轮 SVG 图标（按主题色着色）</li>
+      <li>Confirm 按钮：实心 + ✔ SVG 图标，与 primary 风格统一</li>
+    </ul>
+  </div>
+</body>
+</html>
