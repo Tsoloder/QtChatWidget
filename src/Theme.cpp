@@ -587,3 +587,18 @@ Theme themeById(ThemeId id)
     }
     return militaryTech();
 }
+
+// ---- 当前主题全局访问器 ----
+namespace {
+ThemeId g_currentThemeId = ThemeId::OneDarkPro;
+}
+
+Theme currentTheme()
+{
+    return themeById(g_currentThemeId);
+}
+
+void setCurrentTheme(ThemeId id)
+{
+    g_currentThemeId = id;
+}

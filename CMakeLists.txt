@@ -10,7 +10,7 @@ set(CMAKE_AUTOUIC ON)
 
 # Qt 5.12.2: point Qt5_DIR to your install, e.g.
 #   D:/Qt/5.12.2/msvc2017_64/lib/cmake/Qt5
-find_package(Qt5 REQUIRED COMPONENTS Widgets Gui Core)
+find_package(Qt5 REQUIRED COMPONENTS Widgets Gui Core Svg)
 
 # 强制源码按 UTF-8 编码编译（MSVC 默认按系统 ANSI 解析，会导致中文乱码）
 if(MSVC)
@@ -31,10 +31,11 @@ add_executable(${PROJECT_NAME} WIN32
     src/ToolParamsWidget.cpp
     src/Theme.cpp
     src/ReplyParser.cpp
+    resources.qrc
 )
 
 target_include_directories(${PROJECT_NAME} PRIVATE src)
-target_link_libraries(${PROJECT_NAME} PRIVATE Qt5::Widgets Qt5::Gui Qt5::Core)
+target_link_libraries(${PROJECT_NAME} PRIVATE Qt5::Widgets Qt5::Gui Qt5::Core Qt5::Svg)
 
 # Temporary screenshot harness (offscreen render -> PNG). Not part of the app.
 add_executable(ClineScreenshot
@@ -49,9 +50,10 @@ add_executable(ClineScreenshot
     src/ToolParamsWidget.cpp
     src/Theme.cpp
     src/ReplyParser.cpp
+    resources.qrc
 )
 target_include_directories(ClineScreenshot PRIVATE src)
-target_link_libraries(ClineScreenshot PRIVATE Qt5::Widgets Qt5::Gui Qt5::Core)
+target_link_libraries(ClineScreenshot PRIVATE Qt5::Widgets Qt5::Gui Qt5::Core Qt5::Svg)
 
 # DockWidget 集成演示（offscreen render -> PNG）。不是正式产物。
 add_executable(DockDemo
@@ -65,6 +67,7 @@ add_executable(DockDemo
     src/ToolParamsWidget.cpp
     src/Theme.cpp
     src/ReplyParser.cpp
+    resources.qrc
 )
 target_include_directories(DockDemo PRIVATE src)
-target_link_libraries(DockDemo PRIVATE Qt5::Widgets Qt5::Gui Qt5::Core)
+target_link_libraries(DockDemo PRIVATE Qt5::Widgets Qt5::Gui Qt5::Core Qt5::Svg)

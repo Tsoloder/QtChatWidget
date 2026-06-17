@@ -102,7 +102,9 @@ int main(int argc, char *argv[])
         w.resize(cellW, 900);
         w.show();
 
-        // 先创建气泡内容，再切换主题，确保 QSS + palette 应用到已存在的子部件
+        // 先设置当前主题，让 addBubble 创建子部件时 SVG 图标能按该主题色着色；
+        // 之后再 setTheme 应用 QSS + palette 到已存在的子部件。
+        setCurrentTheme(id);
         w.addBubble(ChatBubble::Assistant, segs);
         w.setTheme(id);
 

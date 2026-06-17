@@ -74,6 +74,7 @@ ChatWidget::ChatWidget(QWidget *parent)
     connect(m_input, &InputBar::send, this, &ChatWidget::onSend);
     outer->addWidget(m_input);
 
+    setCurrentTheme(m_themeId);
     applyPalette(themeById(m_themeId));
     applyStyleSheet(themeById(m_themeId));
 
@@ -151,6 +152,7 @@ void ChatWidget::setTheme(ThemeId id)
     if (id == m_themeId && m_themeCombo)
         return;
     m_themeId = id;
+    setCurrentTheme(id);
     if (m_themeCombo) {
         QSignalBlocker b(m_themeCombo);
         for (int i = 0; i < m_themeCombo->count(); ++i) {

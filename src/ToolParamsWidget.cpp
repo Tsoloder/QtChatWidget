@@ -8,6 +8,9 @@
 #include <QHBoxLayout>
 #include <QFrame>
 #include <QLabel>
+#include <QIcon>
+#include "SvgIcon.h"
+#include "Theme.h"
 
 ToolParamsWidget::ToolParamsWidget(const QString &toolName,
                                    const QVector<ContentSegment::Param> &params,
@@ -20,11 +23,19 @@ ToolParamsWidget::ToolParamsWidget(const QString &toolName,
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(6);
 
-    // header
-    auto *title = new QLabel(QStringLiteral("[") + toolName +
-                             QStringLiteral("] parameters"));
+    // header: 齿轮 SVG 图标 + 工具名（图标按当前主题 toolTitleColor 着色）
+    auto *header = new QHBoxLayout;
+    header->setContentsMargins(0, 0, 0, 0);
+    header->setSpacing(6);
+    auto *iconLbl = new QLabel;
+    iconLbl->setPixmap(svgTintedPixmap(QStringLiteral(":/icons/gear.svg"), 16,
+                                       QColor(currentTheme().toolTitleColor)));
+    auto *title = new QLabel(toolName + QStringLiteral(" parameters"));
     title->setObjectName("toolTitle");
-    layout->addWidget(title);
+    header->addWidget(iconLbl);
+    header->addWidget(title);
+    header->addStretch();
+    layout->addLayout(header);
 
     // table
     m_table = new QTableWidget(static_cast<int>(params.size()), 3);
@@ -77,6 +88,9 @@ ToolParamsWidget::ToolParamsWidget(const QString &toolName,
     confirm->setObjectName("confirmParamsBtn");
     confirm->setCursor(Qt::PointingHandCursor);
     confirm->setMinimumHeight(32);
+    confirm->setIcon(QIcon(svgTintedPixmap(QStringLiteral(":/icons/check.svg"), 14,
+                                           QColor(currentTheme().confirmBtnText))));
+    confirm->setIconSize(QSize(14, 14));
     connect(confirm, &QPushButton::clicked, this, &ToolParamsWidget::onConfirm);
     row->addStretch();
     row->addWidget(confirm);
