@@ -1,0 +1,36 @@
+# 构建产物
+build/
+*.o
+*.obj
+*.exe
+*.out
+*.app/
+
+# CMake 缓存
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+CMakeRuleHashes.txt
+*.cmake
+
+# 自动生成的 moc 文件
+*_autogen/
+moc_*.cpp
+moc_*.h
+mocs_compilation.cpp
+
+# 截图（由 screenshot harness 生成）
+screenshot.png
+screenshot_dock.png
+
+# IDE / 编辑器
+.vscode/
+.idea/
+*.user
+*.suo
+*.sln.docstates
+
+# 系统文件
+.DS_Store
+Thumbs.db
