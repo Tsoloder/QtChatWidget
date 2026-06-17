@@ -16,6 +16,7 @@
 #include "OptionsWidget.h"
 #include "ToolParamsWidget.h"
 #include "ReplyParser.h"
+#include "SvgIcon.h"
 
 // 截图脚本：模拟一条"模型回复"原始字符串（包含正文 + 代码 + 末尾 JSON 块），
 // 用 parseAssistantReply 解析后渲染到每个主题，对比 Options + ToolParams 的样式。
@@ -143,8 +144,16 @@ int main(int argc, char *argv[])
         y += optPix.height() + gap;
 
         p.setPen(labelCol);
-        p.drawText(QRect(pad, y, cellW - 2 * pad, labelH),
-                   Qt::AlignLeft | Qt::AlignVCenter, QStringLiteral("PARAMETER TABLE"));
+        // PARAMETER TABLE 标签左侧绘制齿轮 SVG 图标（按主题标题色着色）
+        {
+            const int iconPx = 16;
+            const int iconGap = 6;
+            QPixmap gear = svgTintedPixmap(QStringLiteral(":/icons/gear.svg"),
+                                           iconPx, labelCol);
+            p.drawPixmap(pad, y + (labelH - iconPx) / 2, gear);
+            p.drawText(QRect(pad + iconPx + iconGap, y, cellW - 2 * pad - iconPx - iconGap, labelH),
+                       Qt::AlignLeft | Qt::AlignVCenter, QStringLiteral("PARAMETER TABLE"));
+        }
         y += labelH;
         p.drawPixmap(pad, y, tabPix);
         p.end();
