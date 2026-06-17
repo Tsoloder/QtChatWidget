@@ -61,6 +61,12 @@ int main(int argc, char *argv[])
     QApplication app(argc, argv);
     app.setStyle("Fusion");
 
+    // Linux 上没有 Consolas / Courier New，QSS 的 font-family fallback 又不可靠，
+    // 用 insertSubstitution 强制把 Consolas 替换成含中文的等宽字体，
+    // 这样表格/按钮里的中文不会显示成方框。
+    QFont::insertSubstitution("Consolas", "Noto Sans Mono CJK SC");
+    QFont::insertSubstitution("Courier New", "Noto Sans Mono CJK SC");
+
     const ThemeId themes[] = {
         ThemeId::MilitaryTech,
         ThemeId::FutureTechBlue,

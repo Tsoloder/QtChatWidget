@@ -2,7 +2,14 @@
 
 namespace {
 
-const QString MONO = QStringLiteral("Consolas, \"Courier New\", monospace");
+// 字体回退链：Windows 优先 Consolas；Linux/macOS 直接用含中文的等宽字体。
+// 注意：Qt QSS 的 font-family fallback 不可靠（不会按字符回退），
+// 所以在非 Windows 平台直接首选含 CJK 字形的字体，避免中文显示成方框。
+#ifdef Q_OS_WIN
+const QString MONO = QStringLiteral("Consolas, \"Courier New\", \"Microsoft YaHei\", monospace");
+#else
+const QString MONO = QStringLiteral("\"Noto Sans Mono CJK SC\", \"WenQuanYi Zen Hei\", monospace");
+#endif
 
 Theme militaryTech()
 {
