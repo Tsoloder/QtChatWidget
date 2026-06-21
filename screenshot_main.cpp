@@ -6,6 +6,9 @@
 #include <QPainter>
 #include <QVBoxLayout>
 #include <QWidget>
+#include <QFile>
+#include <QTextStream>
+#include <QFileInfo>
 #include "ChatWidget.h"
 #include "ChatBubble.h"
 #include "ContentSegment.h"
@@ -13,6 +16,7 @@
 #include "OptionsWidget.h"
 #include "ToolParamsWidget.h"
 #include "ReplyParser.h"
+#include "SvgIcon.h"
 
 // 截图脚本：模拟一条"模型回复"原始字符串（包含正文 + 代码 + 末尾 JSON 块），
 // 用 parseAssistantReply 解析后渲染到每个主题，对比 Options + ToolParams 的样式。
@@ -58,6 +62,12 @@ int main(int argc, char *argv[])
     QApplication app(argc, argv);
     app.setStyle("Fusion");
 
+    // Linux 上没有 Consolas / Courier New，QSS 的 font-family fallback 又不可靠，
+    // 用 insertSubstitution 强制把 Consolas 替换成含中文的等宽字体，
+    // 这样表格/按钮里的中文不会显示成方框。
+    QFont::insertSubstitution("Consolas", "Noto Sans Mono CJK SC");
+    QFont::insertSubstitution("Courier New", "Noto Sans Mono CJK SC");
+
     const ThemeId themes[] = {
         ThemeId::MilitaryTech,
         ThemeId::FutureTechBlue,
@@ -66,8 +76,24 @@ int main(int argc, char *argv[])
         ThemeId::WeChatLight,
     };
 
+    // 优先从 model_reply.txt 读取真实模型回复；不存在则用内置示例。
+    QString modelReply;
+    const QString replyPath = QStringLiteral("/workspace/model_reply.txt");
+    if (QFileInfo::exists(replyPath)) {
+        QFile f(replyPath);
+        if (f.open(QIODevice::ReadOnly | QIODevice::Text)) {
+            modelReply = QString::fromUtf8(f.readAll());
+            qInfo("Loaded model reply from %s (%d chars)",
+                  qPrintable(replyPath), modelReply.length());
+        }
+    }
+    if (modelReply.trimmed().isEmpty()) {
+        qInfo("model_reply.txt not found, using built-in sample.");
+        modelReply = QString::fromUtf8(kModelReply);
+    }
+
     // 用 parseAssistantReply 把"模型原始回复"解析成 ContentSegments
-    const ContentSegments segs = parseAssistantReply(QString::fromUtf8(kModelReply));
+    const ContentSegments segs = parseAssistantReply(modelReply);
 
     QVector<QImage> cells;
     const int cellW = 560;
@@ -77,7 +103,9 @@ int main(int argc, char *argv[])
         w.resize(cellW, 900);
         w.show();
 
-        // 先创建气泡内容，再切换主题，确保 QSS + palette 应用到已存在的子部件
+        // 先设置当前主题，让 addBubble 创建子部件时 SVG 图标能按该主题色着色；
+        // 之后再 setTheme 应用 QSS + palette 到已存在的子部件。
+        setCurrentTheme(id);
         w.addBubble(ChatBubble::Assistant, segs);
         w.setTheme(id);
 
@@ -116,8 +144,16 @@ int main(int argc, char *argv[])
         y += optPix.height() + gap;
 
         p.setPen(labelCol);
-        p.drawText(QRect(pad, y, cellW - 2 * pad, labelH),
-                   Qt::AlignLeft | Qt::AlignVCenter, QStringLiteral("PARAMETER TABLE"));
+        // PARAMETER TABLE 标签左侧绘制齿轮 SVG 图标（按主题标题色着色）
+        {
+            const int iconPx = 16;
+            const int iconGap = 6;
+            QPixmap gear = svgTintedPixmap(QStringLiteral(":/icons/gear.svg"),
+                                           iconPx, labelCol);
+            p.drawPixmap(pad, y + (labelH - iconPx) / 2, gear);
+            p.drawText(QRect(pad + iconPx + iconGap, y, cellW - 2 * pad - iconPx - iconGap, labelH),
+                       Qt::AlignLeft | Qt::AlignVCenter, QStringLiteral("PARAMETER TABLE"));
+        }
         y += labelH;
         p.drawPixmap(pad, y, tabPix);
         p.end();

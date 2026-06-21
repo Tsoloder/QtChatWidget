@@ -11,6 +11,9 @@
 #include <QHBoxLayout>
 #include <QComboBox>
 #include <QPalette>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonArray>
 
 ChatWidget::ChatWidget(QWidget *parent)
     : QWidget(parent)
@@ -74,6 +77,7 @@ ChatWidget::ChatWidget(QWidget *parent)
     connect(m_input, &InputBar::send, this, &ChatWidget::onSend);
     outer->addWidget(m_input);
 
+    setCurrentTheme(m_themeId);
     applyPalette(themeById(m_themeId));
     applyStyleSheet(themeById(m_themeId));
 
@@ -103,9 +107,47 @@ void ChatWidget::setHeaderVisible(bool visible)
 void ChatWidget::addBubble(ChatBubble::Role role, const ContentSegments &segments)
 {
     auto *bubble = new ChatBubble(role, segments);
+
+    // 原有结构化信号（保留给需要细粒度数据的宿主程序）
     connect(bubble, &ChatBubble::optionSelected, this, &ChatWidget::optionSelected);
     connect(bubble, &ChatBubble::toolApproved,   this, &ChatWidget::toolApproved);
     connect(bubble, &ChatBubble::paramsConfirmed,this, &ChatWidget::paramsConfirmed);
+
+    // 统一字符串输出：把每种操作转成 JSON 后通过 actionTriggered 发出
+    connect(bubble, &ChatBubble::optionSelected, this,
+        [this](ChatBubble *, int idx, const QString &t) {
+            QJsonObject o;
+            o["index"] = idx;
+            o["value"] = t;
+            emit actionTriggered(QStringLiteral("option_selected"),
+                QString::fromUtf8(QJsonDocument(o).toJson(QJsonDocument::Compact)));
+        });
+
+    connect(bubble, &ChatBubble::toolApproved, this,
+        [this](ChatBubble *, bool approved, bool alwaysAllow) {
+            QJsonObject o;
+            o["approved"] = approved;
+            o["always_allow"] = alwaysAllow;
+            emit actionTriggered(QStringLiteral("tool_approved"),
+                QString::fromUtf8(QJsonDocument(o).toJson(QJsonDocument::Compact)));
+        });
+
+    connect(bubble, &ChatBubble::paramsConfirmed, this,
+        [this](ChatBubble *, const QVector<ContentSegment::Param> &params) {
+            QJsonArray arr;
+            for (const ContentSegment::Param &p : params) {
+                QJsonObject o;
+                o["name"]        = p.name;
+                o["description"] = p.description;
+                o["value"]       = p.value;
+                arr.append(o);
+            }
+            QJsonObject root;
+            root["params"] = arr;
+            emit actionTriggered(QStringLiteral("params_confirmed"),
+                QString::fromUtf8(QJsonDocument(root).toJson(QJsonDocument::Compact)));
+        });
+
     // insert before the trailing stretch
     const int idx = m_chatLayout->count() - 1;
     m_chatLayout->insertWidget(idx, bubble);
@@ -144,6 +186,12 @@ void ChatWidget::onSend(const QString &text)
     m_status->setText(QStringLiteral("STATUS: PROCESSING..."));
     // 通知宿主程序：用户发了一条消息，由宿主去调用 LLM 并把回复 addBubble 回来
     emit messageSent(text);
+
+    // 统一字符串输出
+    QJsonObject o;
+    o["text"] = text;
+    emit actionTriggered(QStringLiteral("message_sent"),
+        QString::fromUtf8(QJsonDocument(o).toJson(QJsonDocument::Compact)));
 }
 
 void ChatWidget::setTheme(ThemeId id)
@@ -151,6 +199,7 @@ void ChatWidget::setTheme(ThemeId id)
     if (id == m_themeId && m_themeCombo)
         return;
     m_themeId = id;
+    setCurrentTheme(id);
     if (m_themeCombo) {
         QSignalBlocker b(m_themeCombo);
         for (int i = 0; i < m_themeCombo->count(); ++i) {
@@ -245,53 +294,55 @@ void ChatWidget::applyStyleSheet(const Theme &t)
         "QTextEdit#codeEdit { background: ${codeEditBg}; color: ${codeEditTextColor}; border: 1px solid ${codeEditBorder};"
         "  border-top: none; border-bottom-left-radius: 8px; border-bottom-right-radius: 8px; }"
 
-        "QPushButton#optionBtn_default { background: ${optionBtnBg}; color: ${optionBtnText}; border: 1px solid ${optionBtnBorder};"
-        "  border-left: 3px solid ${optionBtnAccent}; border-radius: 8px; padding: 8px 12px; text-align: left; font-size: 13px; }"
-        "QPushButton#optionBtn_default:hover { background: ${optionBtnHoverBg}; border-left: 3px solid ${optionBtnHoverAccent}; color: ${optionBtnHoverText}; }"
-        "QPushButton#optionBtn_default:pressed { background: ${optionBtnPressedBg}; border-left: 3px solid ${optionBtnPressedAccent}; }"
-        // primary：强调色按钮（如"应用此修改"）
-        "QPushButton#optionBtn_primary { background: ${approveBtnBg}; color: ${approveBtnText}; border: 1px solid ${approveBtnBorder};"
-        "  border-left: 3px solid ${approveBtnBorder}; border-radius: 8px; padding: 8px 12px; text-align: left; font-size: 13px; font-weight: bold; }"
-        "QPushButton#optionBtn_primary:hover { background: ${approveBtnHoverBg}; border-color: ${approveBtnHoverBorder}; }"
+        // 选项按钮：扁平、统一 6px 圆角、无左侧条纹，按主流商业软件风格
+        // default：幽灵/次级按钮
+        "QPushButton#optionBtn_default { background: ${optionBtnBg}; color: ${optionBtnText};"
+        "  border: 1px solid ${optionBtnBorder}; border-radius: 6px; padding: 9px 14px; text-align: left; font-size: 13px; }"
+        "QPushButton#optionBtn_default:hover { background: ${optionBtnHoverBg}; border-color: ${optionBtnHoverAccent}; color: ${optionBtnHoverText}; }"
+        "QPushButton#optionBtn_default:pressed { background: ${optionBtnPressedBg}; }"
+        // primary：实心主操作按钮（如"应用此修改"）
+        "QPushButton#optionBtn_primary { background: ${confirmBtnBg}; color: ${confirmBtnText};"
+        "  border: 1px solid ${confirmBtnBorder}; border-radius: 6px; padding: 9px 14px; text-align: left; font-size: 13px; font-weight: 600; }"
+        "QPushButton#optionBtn_primary:hover { background: ${confirmBtnHoverBg}; border-color: ${confirmBtnHoverBorder}; color: ${confirmBtnHoverText}; }"
         // danger：危险操作（如"取消"）
-        "QPushButton#optionBtn_danger { background: ${rejectBtnBg}; color: ${rejectBtnText}; border: 1px solid ${rejectBtnBorder};"
-        "  border-left: 3px solid ${rejectBtnBorder}; border-radius: 8px; padding: 8px 12px; text-align: left; font-size: 13px; }"
+        "QPushButton#optionBtn_danger { background: ${rejectBtnBg}; color: ${rejectBtnText};"
+        "  border: 1px solid ${rejectBtnBorder}; border-radius: 6px; padding: 9px 14px; text-align: left; font-size: 13px; }"
         "QPushButton#optionBtn_danger:hover { background: ${rejectBtnHoverBg}; border-color: ${rejectBtnHoverBorder}; }"
         // success：成功确认类
-        "QPushButton#optionBtn_success { background: ${confirmBtnBg}; color: ${confirmBtnText}; border: 1px solid ${confirmBtnBorder};"
-        "  border-left: 3px solid ${confirmBtnBorder}; border-radius: 8px; padding: 8px 12px; text-align: left; font-size: 13px; }"
+        "QPushButton#optionBtn_success { background: ${confirmBtnBg}; color: ${confirmBtnText};"
+        "  border: 1px solid ${confirmBtnBorder}; border-radius: 6px; padding: 9px 14px; text-align: left; font-size: 13px; }"
         "QPushButton#optionBtn_success:hover { background: ${confirmBtnHoverBg}; border-color: ${confirmBtnHoverBorder}; color: ${confirmBtnHoverText}; }"
         // 兼容旧的 #optionBtn（无 style 后缀）
-        "QPushButton#optionBtn { background: ${optionBtnBg}; color: ${optionBtnText}; border: 1px solid ${optionBtnBorder};"
-        "  border-left: 3px solid ${optionBtnAccent}; border-radius: 8px; padding: 8px 12px; text-align: left; font-size: 13px; }"
-        "QPushButton#optionBtn:hover { background: ${optionBtnHoverBg}; border-left: 3px solid ${optionBtnHoverAccent}; color: ${optionBtnHoverText}; }"
-        "QPushButton#optionBtn:pressed { background: ${optionBtnPressedBg}; border-left: 3px solid ${optionBtnPressedAccent}; }"
+        "QPushButton#optionBtn { background: ${optionBtnBg}; color: ${optionBtnText};"
+        "  border: 1px solid ${optionBtnBorder}; border-radius: 6px; padding: 9px 14px; text-align: left; font-size: 13px; }"
+        "QPushButton#optionBtn:hover { background: ${optionBtnHoverBg}; border-color: ${optionBtnHoverAccent}; color: ${optionBtnHoverText}; }"
+        "QPushButton#optionBtn:pressed { background: ${optionBtnPressedBg}; }"
 
         "QFrame#toolPanel { background: ${toolPanelBg}; border: 1px solid ${toolPanelBorder};"
-        "  border-left: 3px solid ${toolPanelAccent}; border-radius: 10px; }"
-        "QLabel#toolTitle { color: ${toolTitleColor}; font-weight: bold; font-size: 13px; font-family: ${monoFont}; letter-spacing: 1px; }"
+        "  border-radius: 8px; }"
+        "QLabel#toolTitle { color: ${toolTitleColor}; font-weight: 600; font-size: 13px; font-family: ${monoFont}; }"
         "QLabel#toolDesc { color: ${toolDescColor}; font-size: 12px; font-family: ${monoFont}; }"
         "QPushButton#approveBtn { background: ${approveBtnBg}; color: ${approveBtnText}; border: 1px solid ${approveBtnBorder};"
-        "  border-radius: 6px; padding: 6px 14px; font-family: ${monoFont}; }"
+        "  border-radius: 6px; padding: 7px 14px; font-family: ${monoFont}; }"
         "QPushButton#approveBtn:hover { background: ${approveBtnHoverBg}; border-color: ${approveBtnHoverBorder}; }"
         "QPushButton#approveBtn:disabled { background: ${disabledBg}; color: ${disabledText}; border-color: ${disabledBorder}; }"
         "QPushButton#rejectBtn { background: ${rejectBtnBg}; color: ${rejectBtnText}; border: 1px solid ${rejectBtnBorder};"
-        "  border-radius: 6px; padding: 6px 14px; font-family: ${monoFont}; }"
+        "  border-radius: 6px; padding: 7px 14px; font-family: ${monoFont}; }"
         "QPushButton#rejectBtn:hover { background: ${rejectBtnHoverBg}; border-color: ${rejectBtnHoverBorder}; }"
         "QPushButton#rejectBtn:disabled { background: ${disabledBg}; color: ${disabledText}; border-color: ${disabledBorder}; }"
 
         "QTableWidget#paramTable { background: ${tableBg}; alternate-background-color: ${tableAltBg};"
         "  color: ${tableText}; border: 1px solid ${tableBorder};"
-        "  gridline-color: ${tableGrid}; border-radius: 8px; selection-background-color: ${tableSelBg}; selection-color: ${tableSelText}; }"
-        "QTableWidget#paramTable::item { padding: 4px 6px; border: none; }"
+        "  border-radius: 6px; selection-background-color: ${tableSelBg}; selection-color: ${tableSelText}; }"
+        "QTableWidget#paramTable::item { padding: 6px 8px; border: none; }"
         "QTableWidget#paramTable::item:editable { background: ${tableEditBg}; }"
         "QTableWidget#paramTable::item:selected { background: ${tableSelBg}; color: ${tableSelText}; }"
-        "QHeaderView::section { background: ${headerSectionBg}; color: ${headerSectionColor}; padding: 5px 6px;"
+        "QHeaderView::section { background: ${headerSectionBg}; color: ${headerSectionColor}; padding: 7px 8px;"
         "  border: none; border-right: 1px solid ${headerSectionBorder}; border-bottom: 1px solid ${headerSectionBorder};"
-        "  font-weight: bold; font-family: ${monoFont}; letter-spacing: 1px; }"
+        "  font-weight: 600; font-family: ${monoFont}; }"
         "QTableCornerButton::section { background: ${headerSectionBg}; border: none; border-bottom: 1px solid ${headerSectionBorder}; }"
         "QPushButton#confirmParamsBtn { background: ${confirmBtnBg}; color: ${confirmBtnText}; border: 1px solid ${confirmBtnBorder};"
-        "  border-radius: 6px; padding: 6px 18px; font-size: 12px; font-weight: bold; font-family: ${monoFont}; letter-spacing: 1px; }"
+        "  border-radius: 6px; padding: 8px 18px; font-size: 12px; font-weight: 600; font-family: ${monoFont}; }"
         "QPushButton#confirmParamsBtn:hover { background: ${confirmBtnHoverBg}; border-color: ${confirmBtnHoverBorder}; color: ${confirmBtnHoverText}; }"
         "QPushButton#confirmParamsBtn:pressed { background: ${confirmBtnPressedBg}; color: ${confirmBtnPressedText}; }"
         "QPushButton#confirmParamsBtn:disabled { background: ${disabledBg}; color: ${disabledText}; border-color: ${disabledBorder}; }"

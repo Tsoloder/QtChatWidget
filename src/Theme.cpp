@@ -2,7 +2,14 @@
 
 namespace {
 
-const QString MONO = QStringLiteral("Consolas, \"Courier New\", monospace");
+// 字体回退链：Windows 优先 Consolas；Linux/macOS 直接用含中文的等宽字体。
+// 注意：Qt QSS 的 font-family fallback 不可靠（不会按字符回退），
+// 所以在非 Windows 平台直接首选含 CJK 字形的字体，避免中文显示成方框。
+#ifdef Q_OS_WIN
+const QString MONO = QStringLiteral("Consolas, \"Courier New\", \"Microsoft YaHei\", monospace");
+#else
+const QString MONO = QStringLiteral("\"Noto Sans Mono CJK SC\", \"WenQuanYi Zen Hei\", monospace");
+#endif
 
 Theme militaryTech()
 {
@@ -79,14 +86,14 @@ Theme militaryTech()
     t.headerSectionBg = "#0d130d";
     t.headerSectionColor = "#8fbf5a";
     t.headerSectionBorder = "#2a3a2a";
-    t.confirmBtnBg = "#1a2a14";
-    t.confirmBtnText = "#8fbf5a";
-    t.confirmBtnBorder = "#4a6a3a";
-    t.confirmBtnHoverBg = "#2a4a1a";
-    t.confirmBtnHoverBorder = "#8fbf5a";
-    t.confirmBtnHoverText = "#c8d4c0";
-    t.confirmBtnPressedBg = "#4a6a3a";
-    t.confirmBtnPressedText = "#0a0e0a";
+    t.confirmBtnBg = "#5a8a3a";      // 实心主操作色（军工绿）
+    t.confirmBtnText = "#ffffff";
+    t.confirmBtnBorder = "#5a8a3a";
+    t.confirmBtnHoverBg = "#6a9a4a";
+    t.confirmBtnHoverBorder = "#6a9a4a";
+    t.confirmBtnHoverText = "#ffffff";
+    t.confirmBtnPressedBg = "#4a7a2a";
+    t.confirmBtnPressedText = "#ffffff";
 
     t.inputBg = "#060906";
     t.inputText = "#c8d4c0";
@@ -191,14 +198,14 @@ Theme futureTechBlue()
     t.headerSectionBg = "#0a1428";
     t.headerSectionColor = "#00d4ff";
     t.headerSectionBorder = "#1a3a6a";
-    t.confirmBtnBg = "#0a2040";
-    t.confirmBtnText = "#00d4ff";
+    t.confirmBtnBg = "#0078ff";      // 实心主操作色（科技蓝）
+    t.confirmBtnText = "#ffffff";
     t.confirmBtnBorder = "#0078ff";
-    t.confirmBtnHoverBg = "#0a3060";
-    t.confirmBtnHoverBorder = "#00d4ff";
-    t.confirmBtnHoverText = "#c8e0ff";
-    t.confirmBtnPressedBg = "#0078ff";
-    t.confirmBtnPressedText = "#050a18";
+    t.confirmBtnHoverBg = "#1a88ff";
+    t.confirmBtnHoverBorder = "#1a88ff";
+    t.confirmBtnHoverText = "#ffffff";
+    t.confirmBtnPressedBg = "#0066dd";
+    t.confirmBtnPressedText = "#ffffff";
 
     t.inputBg = "#03060f";
     t.inputText = "#c8e0ff";
@@ -579,4 +586,19 @@ Theme themeById(ThemeId id)
     case ThemeId::WeChatLight:     return weChatLight();
     }
     return militaryTech();
+}
+
+// ---- 当前主题全局访问器 ----
+namespace {
+ThemeId g_currentThemeId = ThemeId::OneDarkPro;
+}
+
+Theme currentTheme()
+{
+    return themeById(g_currentThemeId);
+}
+
+void setCurrentTheme(ThemeId id)
+{
+    g_currentThemeId = id;
 }

@@ -50,6 +50,12 @@ signals:
     void toolApproved(ChatBubble *bubble, bool approved, bool alwaysAllow);
     void paramsConfirmed(ChatBubble *bubble, const QVector<ContentSegment::Param> &params);
 
+    // 统一的字符串输出信号：所有交互都以 JSON 字符串形式发出，
+    // 宿主程序只需连接这一个信号即可拿到所有用户操作。
+    //   type: "message_sent" | "option_selected" | "tool_approved" | "params_confirmed"
+    //   jsonPayload: 对应的 JSON 内容对象
+    void actionTriggered(const QString &type, const QString &jsonPayload);
+
 private slots:
     void onSend(const QString &text);
 

@@ -135,3 +135,8 @@ enum class ThemeId
 
 // Look up a fully-populated Theme by id.
 Theme themeById(ThemeId id);
+
+// 当前主题的全局访问器：供无法直接拿到主题的子部件（如 ToolParamsWidget、
+// ChatBubble 内的图标）查询颜色用于 SVG 图标着色。由 ChatWidget::setTheme 设置。
+Theme currentTheme();
+void setCurrentTheme(ThemeId id);

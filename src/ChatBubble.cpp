@@ -2,6 +2,8 @@
 #include "CodeEditor.h"
 #include "OptionsWidget.h"
 #include "ToolParamsWidget.h"
+#include "SvgIcon.h"
+#include "Theme.h"
 
 #include <QLabel>
 #include <QVBoxLayout>
@@ -76,13 +78,22 @@ ChatBubble::ChatBubble(Role role, const ContentSegments &segments, QWidget *pare
             pl->setContentsMargins(12, 10, 12, 10);
             pl->setSpacing(6);
 
-            auto *title = new QLabel(QString::fromUtf8("\xe2\x9a\x99 ") + seg.toolName); // gear + name
+            auto *titleRow = new QHBoxLayout;
+            titleRow->setContentsMargins(0, 0, 0, 0);
+            titleRow->setSpacing(6);
+            auto *iconLbl = new QLabel;
+            iconLbl->setPixmap(svgTintedPixmap(QStringLiteral(":/icons/gear.svg"), 16,
+                                               QColor(currentTheme().toolTitleColor)));
+            auto *title = new QLabel(QStringLiteral("[") + seg.toolName + QStringLiteral("]")); // name
             title->setObjectName("toolTitle");
+            titleRow->addWidget(iconLbl);
+            titleRow->addWidget(title);
+            titleRow->addStretch();
+            pl->addLayout(titleRow);
             auto *desc = new QLabel(seg.toolDescription);
             desc->setObjectName("toolDesc");
             desc->setWordWrap(true);
             desc->setTextInteractionFlags(Qt::TextSelectableByMouse);
-            pl->addWidget(title);
             pl->addWidget(desc);
 
             auto *btnRow = new QWidget;
