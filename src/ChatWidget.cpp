@@ -11,6 +11,9 @@
 #include <QHBoxLayout>
 #include <QComboBox>
 #include <QPalette>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonArray>
 
 ChatWidget::ChatWidget(QWidget *parent)
     : QWidget(parent)
@@ -104,9 +107,47 @@ void ChatWidget::setHeaderVisible(bool visible)
 void ChatWidget::addBubble(ChatBubble::Role role, const ContentSegments &segments)
 {
     auto *bubble = new ChatBubble(role, segments);
+
+    // 原有结构化信号（保留给需要细粒度数据的宿主程序）
     connect(bubble, &ChatBubble::optionSelected, this, &ChatWidget::optionSelected);
     connect(bubble, &ChatBubble::toolApproved,   this, &ChatWidget::toolApproved);
     connect(bubble, &ChatBubble::paramsConfirmed,this, &ChatWidget::paramsConfirmed);
+
+    // 统一字符串输出：把每种操作转成 JSON 后通过 actionTriggered 发出
+    connect(bubble, &ChatBubble::optionSelected, this,
+        [this](ChatBubble *, int idx, const QString &t) {
+            QJsonObject o;
+            o["index"] = idx;
+            o["value"] = t;
+            emit actionTriggered(QStringLiteral("option_selected"),
+                QString::fromUtf8(QJsonDocument(o).toJson(QJsonDocument::Compact)));
+        });
+
+    connect(bubble, &ChatBubble::toolApproved, this,
+        [this](ChatBubble *, bool approved, bool alwaysAllow) {
+            QJsonObject o;
+            o["approved"] = approved;
+            o["always_allow"] = alwaysAllow;
+            emit actionTriggered(QStringLiteral("tool_approved"),
+                QString::fromUtf8(QJsonDocument(o).toJson(QJsonDocument::Compact)));
+        });
+
+    connect(bubble, &ChatBubble::paramsConfirmed, this,
+        [this](ChatBubble *, const QVector<ContentSegment::Param> &params) {
+            QJsonArray arr;
+            for (const ContentSegment::Param &p : params) {
+                QJsonObject o;
+                o["name"]        = p.name;
+                o["description"] = p.description;
+                o["value"]       = p.value;
+                arr.append(o);
+            }
+            QJsonObject root;
+            root["params"] = arr;
+            emit actionTriggered(QStringLiteral("params_confirmed"),
+                QString::fromUtf8(QJsonDocument(root).toJson(QJsonDocument::Compact)));
+        });
+
     // insert before the trailing stretch
     const int idx = m_chatLayout->count() - 1;
     m_chatLayout->insertWidget(idx, bubble);
@@ -145,6 +186,12 @@ void ChatWidget::onSend(const QString &text)
     m_status->setText(QStringLiteral("STATUS: PROCESSING..."));
     // 通知宿主程序：用户发了一条消息，由宿主去调用 LLM 并把回复 addBubble 回来
     emit messageSent(text);
+
+    // 统一字符串输出
+    QJsonObject o;
+    o["text"] = text;
+    emit actionTriggered(QStringLiteral("message_sent"),
+        QString::fromUtf8(QJsonDocument(o).toJson(QJsonDocument::Compact)));
 }
 
 void ChatWidget::setTheme(ThemeId id)
