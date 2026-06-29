@@ -1,4 +1,4 @@
-﻿#include "ChatBubble.h"
+#include "ChatBubble.h"
 #include "CodeEditor.h"
 #include "OptionsWidget.h"
 #include "ToolParamsWidget.h"
@@ -157,4 +157,13 @@ ChatBubble::ChatBubble(Role role, const ContentSegments &segments, QWidget *pare
     }
 
     layout->addWidget(bubble);
+}
+
+void ChatBubble::updateText(const QString &html)
+{
+    // Find the first QLabel with objectName "msgText" and update its content
+    const auto labels = findChildren<QLabel*>(QStringLiteral("msgText"));
+    if (!labels.isEmpty()) {
+        labels.first()->setText(html);
+    }
 }

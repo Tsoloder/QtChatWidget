@@ -1,4 +1,4 @@
-﻿#include "Theme.h"
+#include "Theme.h"
 
 namespace {
 

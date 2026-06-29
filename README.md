@@ -1,12 +1,31 @@
 # ClineLikeChat — Qt 聊天面板组件
 
-一个仿 VSCode Cline 插件风格的 Qt 聊天面板，可显示代码、把模型选项渲染成按钮、提供工具参数表格供用户确认。支持 5 套主题，可作为一个 `QWidget` 嵌入到任意宿主程序（`QDockWidget` / `QSplitter` / `QTabWidget` 等）。
+一个仿 VSCode Cline 插件风格的 Qt 聊天面板，集成 **Skill 系统**、**LLM 客户端**、**流式输出**、**对话式 Skill 路由**等高级特性。可显示代码、把模型选项渲染成按钮、提供工具参数表格供用户确认。支持 5 套主题，可作为一个 `QWidget` 嵌入到任意宿主程序。
 
 - 目标环境：Qt 5.12.2 + VS2022（开发环境 Qt 5.15 + Linux 也可编译）
 - 构建系统：CMake
 - 编码：所有源码 UTF-8（含 BOM），MSVC 下通过 `/utf-8` 强制按 UTF-8 编译
+- **LLM 兼容**：OpenAI / Anthropic 双协议，支持流式输出（SSE）
+- **Skill 系统**：5 个内置 Skill + 用户自定义，支持参数化、多 Skill 叠加、对话式路由
 
 > 本项目使用 TRAE + GLM-5.2 制作
+
+---
+
+## 快速开始
+
+```powershell
+# 一键运行（自动配置 Qt DLL 路径 + 构建 + 启动）
+.\run.ps1 chat
+
+# 生成集成截图
+.\run.ps1 shot
+
+# 构建 + 截图 + 自动打开
+.\run.ps1 all
+```
+
+首次运行前请在 **File → Settings** (Ctrl+,) 中配置 API 信息。
 
 ---
 
@@ -49,10 +68,23 @@
 | `src/SyntaxHighlighter.h/.cpp` | 多语言语法高亮（cpp/python/js/json/bash 等） |
 | `src/OptionsWidget.h/.cpp` | 选项按钮列表，每个按钮按 `style` 配色不同 |
 | `src/ToolParamsWidget.h/.cpp` | 工具参数表格，只有 Value 列可编辑，下方有确认按钮 |
-| `src/InputBar.h/.cpp` | 底部输入框，Enter 发送 / Shift+Enter 换行 |
+| `src/InputBar.h/.cpp` | 底部输入框 + Skill 触发（`/` 弹出 SkillPicker）+ 多 Skill 叠加管理 |
 | `src/Theme.h/.cpp` | 5 套主题的颜色 token 定义 + `themeById()` 工厂 |
 | `src/ReplyParser.h/.cpp` | **模型回复解析器**。把 LLM 原始文本解析成 `ContentSegments` |
-| `src/MainWindow.h/.cpp` | 兼容外壳，内部托管一个 `ChatWidget`，仅用于独立 demo |
+| `src/MainWindow.h/.cpp` | 兼容外壳，集成 LLMClient + Skill 路由 + Settings，承担主程序入口 |
+| **Skill 系统** | |
+| `src/Skill.h/.cpp` | Skill 数据结构 + SkillParam 参数定义 |
+| `src/SkillManager.h/.cpp` | Skill 加载/搜索/匹配/排序/统计，`catalogPrompt()` 生成 Skill 目录 |
+| `src/SkillMdParser.h/.cpp` | SKILL.md 文件解析器（YAML frontmatter + 正文） |
+| `src/SkillPicker.h/.cpp` | Skill 选择器（富文本显示 + 实时过滤） |
+| `src/SkillParamsDialog.h/.cpp` | Skill 参数输入对话框 |
+| `src/ToolRegistry.h/.cpp` | 工具元数据注册 + allowed-tools 权限校验 |
+| **LLM 集成** | |
+| `src/LLMClient.h/.cpp` | LLM 客户端：OpenAI/Anthropic 双协议、流式 SSE、`routeSkill()` 对话式路由 |
+| `src/SettingsDialog.h/.cpp` | API 配置对话框（URL/Key/Model/Type），持久化到 `config.json` |
+| **资源** | |
+| `resources/skills/*/SKILL.md` | 5 个内置 Skill 定义文件 |
+| `run.ps1` | 一键运行脚本（构建+启动+截图） |
 
 ### 核心数据流
 
@@ -454,9 +486,228 @@ ChatWidget 自带的顶部下拉框也允许用户手动切换。嵌入 DockWidg
 
 ---
 
-## 九、构建说明
+## 九、Skill 系统
 
-### 9.1 CMake 配置
+本项目实现了类似 Claude Code 的 Skill 机制，通过 **system prompt 注入** 影响模型行为。
+
+### 9.1 内置 Skill
+
+| Skill ID | 名称 | 用途 |
+|----------|------|------|
+| `code-review` | Code Review | 代码审查（正确性/安全/性能/可维护性/最佳实践） |
+| `refactor` | Refactor | 代码重构建议 |
+| `explain-code` | Explain Code | 代码解释 |
+| `doc-generate` | Doc Generate | 文档生成 |
+| `test-generate` | Test Generate | 测试用例生成 |
+
+### 9.2 SKILL.md 格式
+
+每个 Skill 是一个目录，包含 `SKILL.md` 文件：
+
+```markdown
+---
+name: code-review
+description: Review code for bugs, security, and best practices
+aliases:
+  - cr
+  - review
+tags:
+  - 审查
+  - review
+  - code
+allowed-tools:
+  - read_file
+  - search_code
+extra_params:
+  - name: severity
+    description: Review severity level
+    default: medium
+    required: true
+    type: string
+---
+
+You are a senior code reviewer. When reviewing code, evaluate these aspects:
+1. Correctness & Bugs
+2. Security vulnerabilities
+3. Performance issues
+4. Maintainability
+5. Best Practices
+Rank findings by severity: critical, high, medium, low.
+```
+
+**字段说明**：
+- `name` / `description`：基础信息
+- `aliases`：触发别名（如 `/cr` 等价于 `/code-review`）
+- `tags`：关键词标签，用于自动匹配
+- `allowed-tools`：限制 Skill 可调用的工具
+- `extra_params`：参数定义，激活时弹出对话框让用户填写
+- 正文部分：注入到 system prompt 的指令内容
+
+### 9.3 五大高级特性
+
+#### ① Skill 参数
+
+支持在 SKILL.md 中定义 `extra_params`，激活带参数的 Skill 时弹出对话框：
+
+```cpp
+// SkillParamsDialog 收集用户输入 → Skill::resolvedSystemPrompt() 注入参数值
+Skill skill = manager.skillById("code-review");
+// 用户填入 severity=high, language=cpp
+QString prompt = skill.resolvedSystemPrompt();
+// prompt 中会包含 "severity: high\nlanguage: cpp"
+```
+
+#### ② 多 Skill 叠加
+
+同时激活多个 Skill，system prompt 自动拼接：
+
+```cpp
+// InputBar 维护 QList<Skill> m_activeSkills
+inputBar->addActiveSkill(codeReviewSkill);
+inputBar->addActiveSkill(refactorSkill);
+QString combined = inputBar->combinedSystemPrompt();
+// = codeReview prompt + "\n\n---\n\n" + refactor prompt
+```
+
+输入框上方会显示所有已激活 Skill 的标签，可逐个移除。
+
+#### ③ 对话式 Skill 路由（对齐 Claude Code）
+
+**两阶段流程**，让模型自己选择是否使用 Skill：
+
+```
+Phase 1: 路由
+  ┌─────────────────────────────────────────┐
+  │ system: "You have access to Skills:..." │ ← catalogPrompt()
+  │ user:   "帮我审查这段代码"               │
+  │ tools:  [{"name": "use_skill", ...}]    │
+  └─────────────────────────────────────────┘
+                    ↓
+  模型输出 tool_calls: [{"skill_id": "code-review"}]
+                    ↓
+Phase 2: 生成
+  ┌─────────────────────────────────────────┐
+  │ system: "You are a senior reviewer..."  │ ← 选中 Skill 的 prompt
+  │ user:   "帮我审查这段代码"               │
+  │ stream: true                            │
+  └─────────────────────────────────────────┘
+                    ↓
+  流式输出最终回复
+```
+
+**Fallback 机制**：当模型不支持 `tool_calls` 时，自动回退到客户端关键词匹配（基于 name/alias/tag 计算分数，>= 4 分则自动加载）。
+
+#### ④ 工具调用集成
+
+通过 `ToolRegistry` 管理 12 个内置工具，Skill 的 `allowed-tools` 字段限制可用工具：
+
+```cpp
+// 在 combinedSystemPrompt() 中注入工具使用约束
+"你只能使用以下工具: read_file, search_code"
+```
+
+工具审批面板在聊天气泡中渲染，用户可批准/拒绝。
+
+#### ⑤ 使用频率排序
+
+`SkillManager` 记录每个 Skill 的 `useCount`，持久化到 `skill_usage.json`：
+
+```cpp
+manager.recordUsage("code-review");  // useCount++
+QList<Skill> sorted = manager.allSkillsSorted();  // 按使用频率降序
+```
+
+SkillPicker 中常用 Skill 自动置顶显示。
+
+### 9.4 添加自定义 Skill
+
+1. 在 `resources/skills/` 下新建目录，如 `my-skill/`
+2. 创建 `SKILL.md` 文件（参考 9.2 格式）
+3. 在 `resources.qrc` 中注册：`<file>resources/skills/my-skill/SKILL.md</file>`
+4. 重新构建——新 Skill 自动进入路由候选列表
+
+### 9.5 触发方式
+
+| 方式 | 操作 | 说明 |
+|------|------|------|
+| **手动触发** | 输入 `/` → 弹出 SkillPicker → 选择 | 跳过路由，直接使用选中 Skill |
+| **对话式路由** | 直接输入消息（不带 `/`） | 模型自动选择是否使用 Skill |
+| **Fallback 匹配** | 模型不支持 tool_calls 时 | 客户端关键词匹配（name/alias/tag） |
+
+---
+
+## 十、LLM 集成与流式输出
+
+### 10.1 双协议支持
+
+`LLMClient` 同时支持 OpenAI 和 Anthropic 两种 API 协议：
+
+| 协议 | 端点 | 认证头 | 请求格式 |
+|------|------|--------|---------|
+| OpenAI | `/v1/chat/completions` | `Authorization: Bearer <key>` | `{messages: [{role, content}]}` |
+| Anthropic | `/v1/messages` | `x-api-key: <key>` | `{system, messages: [{role, content}]}` |
+
+在 Settings 中切换 API Type 即可，URL 会自动拼接对应路径。
+
+### 10.2 流式输出（SSE）
+
+```cpp
+connect(m_llm, &LLMClient::streamStarted, []() { /* UI 显示 "STREAMING..." */ });
+connect(m_llm, &LLMClient::streamChunk, [](const QString &delta) {
+    // delta 是增量文本，实时追加到聊天气泡
+    // 气泡中显示带光标 ▌ 的实时文本
+});
+connect(m_llm, &LLMClient::streamFinished, [](const QString &fullText) {
+    // 流结束，fullText 是完整回复
+    // 替换为最终渲染的气泡
+});
+```
+
+### 10.3 对话历史
+
+OpenAI 模式下，`LLMClient` 内部维护 `m_history`，每次请求自动携带历史对话：
+
+```cpp
+m_llm->sendMessage("你好");           // 发送，记录到 history
+m_llm->sendMessage("继续刚才的话题");  // 自动带上之前的对话上下文
+m_llm->clearHistory();                // 清空历史
+```
+
+---
+
+## 十一、API 设置
+
+### 11.1 配置对话框
+
+菜单 **File → Settings** (Ctrl+,) 打开配置对话框：
+
+| 字段 | 说明 | 示例 |
+|------|------|------|
+| API Type | 协议类型 | OpenAI-Compatible / Anthropic |
+| API URL | 服务地址 | `https://api.xiaomimimo.com` |
+| API Key | 密钥 | `sk-xxxx` |
+| Model ID | 模型 ID | `mimo-v2.5-pro` |
+
+### 11.2 配置持久化
+
+配置保存在 exe 同目录的 `config.json`：
+
+```json
+{
+  "apiType": 0,
+  "apiUrl": "https://api.xiaomimimo.com",
+  "apiKey": "sk-xxxx",
+  "modelId": "mimo-v2.5-pro"
+}
+```
+
+启动时自动加载，修改后点 Save 立即生效。
+
+---
+
+## 十二、构建说明
+
+### 12.1 CMake 配置
 
 ```cmake
 cmake_minimum_required(VERSION 3.10)
@@ -465,7 +716,7 @@ project(ClineLikeChat)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_AUTOMOC ON)
 
-find_package(Qt5 REQUIRED COMPONENTS Widgets Gui Core)
+find_package(Qt5 REQUIRED COMPONENTS Widgets Gui Core Network)
 
 # 强制源码按 UTF-8 编码编译（MSVC 默认按系统 ANSI 解析，会导致中文乱码）
 if(MSVC)
@@ -485,12 +736,20 @@ add_executable(ClineLikeChat WIN32
     src/ToolParamsWidget.cpp
     src/Theme.cpp
     src/ReplyParser.cpp
+    src/LLMClient.cpp           # LLM 客户端
+    src/SettingsDialog.cpp      # API 设置对话框
+    src/Skill.cpp               # Skill 数据结构
+    src/SkillManager.cpp        # Skill 管理
+    src/SkillMdParser.cpp       # SKILL.md 解析
+    src/SkillPicker.cpp         # Skill 选择器
+    src/SkillParamsDialog.cpp   # Skill 参数对话框
+    src/ToolRegistry.cpp        # 工具注册
 )
 target_include_directories(ClineLikeChat PRIVATE src)
-target_link_libraries(ClineLikeChat PRIVATE Qt5::Widgets Qt5::Gui Qt5::Core)
+target_link_libraries(ClineLikeChat PRIVATE Qt5::Widgets Qt5::Gui Qt5::Core Qt5::Network)
 ```
 
-### 9.2 构建步骤
+### 12.2 构建步骤
 
 ```bash
 mkdir build && cd build
@@ -498,18 +757,25 @@ cmake .. -DQt5_DIR=/path/to/Qt/5.12.2/msvc2017_64/lib/cmake/Qt5
 cmake --build . --config Release
 ```
 
-### 9.3 需要加入现有项目时
+或使用一键脚本：
+
+```powershell
+.\run.ps1 build
+```
+
+### 12.3 需要加入现有项目时
 
 把 `src/` 目录下所有文件加入你的工程，确保：
 - `CMAKE_AUTOMOC ON`（处理 Q_OBJECT 宏）
 - MSVC 下加 `/utf-8` 编译选项
-- 链接 `Qt5::Widgets Qt5::Gui Qt5::Core`
+- 链接 `Qt5::Widgets Qt5::Gui Qt5::Core Qt5::Network`（Network 用于 LLMClient）
+- 添加 `resources.qrc` 到资源文件
 
 然后在你的代码里 `#include "ChatWidget.h"` 即可使用。
 
 ---
 
-## 十、注意事项
+## 十三、注意事项
 
 1. **源码编码**：所有 `.cpp/.h` 文件均为 UTF-8（含 BOM），MSVC 下必须配合 `/utf-8` 编译选项，否则中文会乱码。
 

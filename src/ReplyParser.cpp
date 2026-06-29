@@ -1,4 +1,4 @@
-﻿#include "ReplyParser.h"
+#include "ReplyParser.h"
 
 #include <QJsonDocument>
 #include <QJsonObject>

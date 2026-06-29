@@ -1,4 +1,4 @@
-﻿#include "SyntaxHighlighter.h"
+#include "SyntaxHighlighter.h"
 
 #include <QTextDocument>
 

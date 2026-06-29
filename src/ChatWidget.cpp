@@ -1,8 +1,11 @@
-﻿#include "ChatWidget.h"
+#include "ChatWidget.h"
 #include "ChatBubble.h"
 #include "InputBar.h"
 #include "ContentSegment.h"
 #include "Theme.h"
+#include "SkillManager.h"
+#include "Skill.h"
+#include "ReplyParser.h"
 
 #include <QScrollBar>
 #include <QTimer>
@@ -75,7 +78,11 @@ ChatWidget::ChatWidget(QWidget *parent)
     // input
     m_input = new InputBar;
     connect(m_input, &InputBar::send, this, &ChatWidget::onSend);
+    connect(m_input, &InputBar::skillActivated, this, &ChatWidget::onSkillActivated);
     outer->addWidget(m_input);
+
+    m_skillManager = new SkillManager(this);
+    m_input->setSkillManager(m_skillManager);
 
     setCurrentTheme(m_themeId);
     applyPalette(themeById(m_themeId));
@@ -173,6 +180,51 @@ void ChatWidget::scrollToEnd()
     bar->setValue(bar->maximum());
 }
 
+void ChatWidget::appendStreamChunk(const QString &delta)
+{
+    m_streamText += delta;
+
+    if (!m_streamBubble) {
+        // Create a new assistant bubble with placeholder text
+        ContentSegments segs;
+        ContentSegment seg;
+        seg.type = ContentSegment::Text;
+        seg.text = QStringLiteral("...");
+        segs.append(seg);
+
+        m_streamBubble = new ChatBubble(ChatBubble::Assistant, segs);
+        const int idx = m_chatLayout->count() - 1;
+        m_chatLayout->insertWidget(idx, m_streamBubble);
+        propagatePalette(palette(), m_streamBubble);
+    }
+
+    // Update the bubble text with accumulated content + blinking cursor
+    m_streamBubble->updateText(m_streamText + QStringLiteral("&#9608;"));
+    scrollToEnd();
+}
+
+void ChatWidget::finishStream()
+{
+    if (!m_streamBubble)
+        return;
+
+    // Remove the stream bubble and replace with properly parsed one
+    m_streamBubble->deleteLater();
+    m_streamBubble = nullptr;
+
+    // Delete the old stream bubble from layout
+    QLayoutItem *it = m_chatLayout->takeAt(m_chatLayout->count() - 2);
+    delete it;
+
+    // Parse and add the final bubble
+    ContentSegments segs = parseAssistantReply(m_streamText);
+    addBubble(ChatBubble::Assistant, segs);
+
+    m_streamBubble = nullptr;
+    m_streamText.clear();
+    m_status->setText(QStringLiteral("STATUS: READY"));
+}
+
 void ChatWidget::onSend(const QString &text)
 {
     // 把用户消息上屏
@@ -184,12 +236,21 @@ void ChatWidget::onSend(const QString &text)
     addBubble(ChatBubble::User, segs);
 
     m_status->setText(QStringLiteral("STATUS: PROCESSING..."));
-    // 通知宿主程序：用户发了一条消息，由宿主去调用 LLM 并把回复 addBubble 回来
-    emit messageSent(text);
+
+    QString skillPrompt = m_input->combinedSystemPrompt();
+
+    if (!skillPrompt.isEmpty()) {
+        // Manually activated Skill — send directly
+        emit messageSentWithSkill(text, skillPrompt);
+    } else {
+        // No manual Skill — let model decide via routing
+        emit messageSent(text);
+    }
 
     // 统一字符串输出
     QJsonObject o;
     o["text"] = text;
+    o["skill_prompt"] = skillPrompt;
     emit actionTriggered(QStringLiteral("message_sent"),
         QString::fromUtf8(QJsonDocument(o).toJson(QJsonDocument::Compact)));
 }
@@ -404,4 +465,16 @@ void ChatWidget::applyStyleSheet(const Theme &t)
         qss.replace(QStringLiteral("${") + QString::fromLatin1(tk.key) + QStringLiteral("}"), tk.val);
 
     setStyleSheet(qss);
+}
+
+void ChatWidget::onSkillActivated(const Skill &skill)
+{
+    if (m_skillManager)
+        m_skillManager->recordUsage(skill.id);
+}
+
+void ChatWidget::setStatusText(const QString &text)
+{
+    if (m_status)
+        m_status->setText(text);
 }

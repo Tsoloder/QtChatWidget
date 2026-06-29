@@ -1,4 +1,4 @@
-﻿#include "CodeEditor.h"
+#include "CodeEditor.h"
 #include "SyntaxHighlighter.h"
 
 #include <QTextEdit>

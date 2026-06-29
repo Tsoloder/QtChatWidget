@@ -1,4 +1,4 @@
-﻿#include "ToolParamsWidget.h"
+#include "ToolParamsWidget.h"
 
 #include <QTableWidget>
 #include <QTableWidgetItem>

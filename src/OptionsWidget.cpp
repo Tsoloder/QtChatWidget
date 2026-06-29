@@ -1,4 +1,4 @@
-﻿#include "OptionsWidget.h"
+#include "OptionsWidget.h"
 
 #include <QPushButton>
 #include <QVBoxLayout>

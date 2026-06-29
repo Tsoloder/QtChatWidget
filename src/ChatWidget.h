@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include <QWidget>
 #include <QVBoxLayout>
@@ -7,9 +7,12 @@
 #include "ChatBubble.h"
 #include "ContentSegment.h"
 #include "Theme.h"
+#include "Skill.h"
 
 class InputBar;
 class QComboBox;
+class SkillManager;
+class SkillPicker;
 
 // 可嵌入的聊天面板：一个独立的 QWidget，可以放进 QDockWidget、
 // QSplitter、QTabWidget 或任何布局里。
@@ -33,6 +36,8 @@ public:
     void setHeaderVisible(bool visible);
     bool isHeaderVisible() const { return m_headerVisible; }
 
+    SkillManager *skillManager() const { return m_skillManager; }
+
 public slots:
     // 追加一条消息气泡
     void addBubble(ChatBubble::Role role, const ContentSegments &segments);
@@ -40,10 +45,13 @@ public slots:
     void clear();
     // 滚动到底部
     void scrollToEnd();
+    // 设置状态文本
+    void setStatusText(const QString &text);
 
 signals:
     // 用户在输入框点发送。宿主程序接到后通常调用 LLM，再把回复 addBubble 回来
     void messageSent(const QString &text);
+    void messageSentWithSkill(const QString &text, const QString &skillSystemPrompt);
 
     // 用户在气泡内的交互
     void optionSelected(ChatBubble *bubble, int index, const QString &text);
@@ -56,8 +64,13 @@ signals:
     //   jsonPayload: 对应的 JSON 内容对象
     void actionTriggered(const QString &type, const QString &jsonPayload);
 
+public slots:
+    void appendStreamChunk(const QString &delta);
+    void finishStream();
+
 private slots:
     void onSend(const QString &text);
+    void onSkillActivated(const Skill &skill);
 
 private:
     QScrollArea *m_scroll = nullptr;
@@ -66,8 +79,11 @@ private:
     QLabel *m_status = nullptr;
     QComboBox *m_themeCombo = nullptr;
     QFrame *m_header = nullptr;
+    ChatBubble *m_streamBubble = nullptr;
+    QString m_streamText;
     ThemeId m_themeId = ThemeId::OneDarkPro;
     bool m_headerVisible = true;
+    SkillManager *m_skillManager = nullptr;
 
     void applyPalette(const Theme &t);
     void applyStyleSheet(const Theme &t);

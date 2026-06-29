@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include <QWidget>
 #include "ContentSegment.h"
@@ -12,6 +12,9 @@ public:
     enum Role { User, Assistant };
 
     explicit ChatBubble(Role role, const ContentSegments &segments, QWidget *parent = nullptr);
+
+    // Update the first text label's content (for streaming)
+    void updateText(const QString &html);
 
 signals:
     void optionSelected(ChatBubble *bubble, int index, const QString &text);
