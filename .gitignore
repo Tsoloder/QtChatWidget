@@ -23,6 +23,18 @@ mocs_compilation.cpp
 # 截图（由 screenshot harness 生成）
 screenshot.png
 screenshot_dock.png
+skill_features.png
+skill_screenshot.png
+
+# 运行时配置与数据（含 API Key 等敏感信息，禁止入库）
+config.json
+skill_usage.json
+
+# 临时测试代码与设计草稿（开发期产物，不纳入版本管理）
+skill_e2e_test.cpp
+skill_test_main.cpp
+skill_screenshot_main.cpp
+design_skill_system.md
 
 # IDE / 编辑器
 .vscode/
