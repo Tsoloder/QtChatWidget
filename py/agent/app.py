@@ -24,6 +24,7 @@ from session import (
     list_sessions,
     load_session,
     save_session,
+    update_index,
 )
 from skill_runtime import SkillRegistry
 
