@@ -16,8 +16,16 @@ public:
     // Update the first text label's content (for streaming)
     void updateText(const QString &html);
 
+    // Return the original segments used to build this bubble (for export)
+    const ContentSegments &segments() const { return m_segments; }
+    Role role() const { return m_role; }
+
 signals:
     void optionSelected(ChatBubble *bubble, int index, const QString &text);
     void toolApproved(ChatBubble *bubble, bool approved, bool alwaysAllow);
     void paramsConfirmed(ChatBubble *bubble, const QVector<ContentSegment::Param> &params);
+
+private:
+    ContentSegments m_segments;
+    Role m_role = User;
 };

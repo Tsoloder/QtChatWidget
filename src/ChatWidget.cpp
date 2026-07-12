@@ -161,6 +161,7 @@ void ChatWidget::addBubble(ChatBubble::Role role, const ContentSegments &segment
     // 对新气泡及其子部件传播当前主题的 palette，避免后创建的 widget
     //（如 QTableWidget viewport）回退到系统默认的白底色
     propagatePalette(palette(), bubble);
+    m_bubbles.append(bubble);
     QTimer::singleShot(0, this, [this]() { scrollToEnd(); });
 }
 
@@ -172,6 +173,7 @@ void ChatWidget::clear()
         if (it->widget()) it->widget()->deleteLater();
         delete it;
     }
+    m_bubbles.clear();
 }
 
 void ChatWidget::scrollToEnd()
@@ -208,21 +210,97 @@ void ChatWidget::finishStream()
     if (!m_streamBubble)
         return;
 
-    // Remove the stream bubble and replace with properly parsed one
-    m_streamBubble->deleteLater();
-    m_streamBubble = nullptr;
-
-    // Delete the old stream bubble from layout
-    QLayoutItem *it = m_chatLayout->takeAt(m_chatLayout->count() - 2);
-    delete it;
-
-    // Parse and add the final bubble
-    ContentSegments segs = parseAssistantReply(m_streamText);
-    addBubble(ChatBubble::Assistant, segs);
-
+    // Keep the stream bubble as-is (with tool call markers), just finalize it
+    m_streamBubble->updateText(m_streamText);
+    m_bubbles.append(m_streamBubble);
     m_streamBubble = nullptr;
     m_streamText.clear();
     m_status->setText(QStringLiteral("STATUS: READY"));
+}
+
+void ChatWidget::finishStreamWithSegments(const ContentSegments &segs)
+{
+    if (!m_streamBubble)
+        return;
+
+    m_streamBubble->deleteLater();
+    m_streamBubble = nullptr;
+
+    QLayoutItem *it = m_chatLayout->takeAt(m_chatLayout->count() - 2);
+    delete it;
+
+    addBubble(ChatBubble::Assistant, segs);
+    m_streamText.clear();
+    m_status->setText(QStringLiteral("STATUS: READY"));
+}
+
+void ChatWidget::loadMessages(const QJsonArray &messages)
+{
+    clear();
+    for (const QJsonValue &v : messages) {
+        QJsonObject msg = v.toObject();
+        QString role = msg.value(QStringLiteral("role")).toString();
+        ContentSegments segs;
+
+        if (role == QStringLiteral("user")) {
+            ContentSegment seg;
+            seg.type = ContentSegment::Text;
+            seg.text = msg.value(QStringLiteral("content")).toString();
+            segs.append(seg);
+            addBubble(ChatBubble::User, segs);
+        } else if (role == QStringLiteral("assistant")) {
+            if (msg.contains(QStringLiteral("tool_calls"))) {
+                QJsonArray toolCalls = msg.value(QStringLiteral("tool_calls")).toArray();
+                for (const QJsonValue &tc : toolCalls) {
+                    QJsonObject func = tc.toObject().value(QStringLiteral("function")).toObject();
+                    QString name = func.value(QStringLiteral("name")).toString();
+                    QString args = func.value(QStringLiteral("arguments")).toString();
+                    ContentSegment seg;
+                    seg.type = ContentSegment::Text;
+                    seg.text = QStringLiteral("🔧 调用工具 %1(%2)").arg(name, args);
+                    segs.append(seg);
+                }
+            }
+            QString content = msg.value(QStringLiteral("content")).toString();
+            if (!content.isEmpty()) {
+                ContentSegment seg;
+                seg.type = ContentSegment::Text;
+                seg.text = content;
+                segs.append(seg);
+            }
+            if (!segs.isEmpty())
+                addBubble(ChatBubble::Assistant, segs);
+        } else if (role == QStringLiteral("tool")) {
+            // Tool results are shown inline with the previous assistant bubble
+            // For simplicity, add as a separate small bubble
+            ContentSegment seg;
+            seg.type = ContentSegment::Text;
+            seg.text = QStringLiteral("→ %1").arg(msg.value(QStringLiteral("content")).toString());
+            segs.append(seg);
+            addBubble(ChatBubble::Assistant, segs);
+        }
+    }
+    scrollToEnd();
+}
+
+void ChatWidget::abortStream()
+{
+    if (!m_streamBubble)
+        return;
+
+    m_streamBubble->deleteLater();
+    m_streamBubble = nullptr;
+
+    // Delete the stream bubble from layout (it sits before the trailing stretch)
+    QLayoutItem *it = m_chatLayout->takeAt(m_chatLayout->count() - 2);
+    delete it;
+
+    m_streamText.clear();
+}
+
+void ChatWidget::setInputBusy(bool busy)
+{
+    m_input->setBusy(busy);
 }
 
 void ChatWidget::onSend(const QString &text)
@@ -237,20 +315,30 @@ void ChatWidget::onSend(const QString &text)
 
     m_status->setText(QStringLiteral("STATUS: PROCESSING..."));
 
-    QString skillPrompt = m_input->combinedSystemPrompt();
-
-    if (!skillPrompt.isEmpty()) {
-        // Manually activated Skill — send directly
-        emit messageSentWithSkill(text, skillPrompt);
-    } else {
-        // No manual Skill — let model decide via routing
-        emit messageSent(text);
+    QJsonArray selectedSkills;
+    const QList<Skill> activeSkills = m_input->activeSkills();
+    for (const Skill &skill : activeSkills) {
+        QJsonObject item;
+        item[QStringLiteral("id")] = skill.id;
+        QJsonObject params;
+        QMapIterator<QString, QString> it(skill.paramValues);
+        while (it.hasNext()) {
+            it.next();
+            params[it.key()] = it.value();
+        }
+        item[QStringLiteral("params")] = params;
+        selectedSkills.append(item);
     }
+
+    if (!selectedSkills.isEmpty())
+        emit messageSentWithSkills(text, selectedSkills);
+    else
+        emit messageSent(text);
 
     // 统一字符串输出
     QJsonObject o;
     o["text"] = text;
-    o["skill_prompt"] = skillPrompt;
+    o["selected_skills"] = selectedSkills;
     emit actionTriggered(QStringLiteral("message_sent"),
         QString::fromUtf8(QJsonDocument(o).toJson(QJsonDocument::Compact)));
 }
@@ -272,6 +360,9 @@ void ChatWidget::setTheme(ThemeId id)
     }
     applyPalette(themeById(id));
     applyStyleSheet(themeById(id));
+    if (m_input)
+        m_input->setTheme(id);
+    emit themeChanged(id);
 }
 
 void ChatWidget::propagatePalette(const QPalette &pal, QWidget *w)

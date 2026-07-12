@@ -26,9 +26,14 @@ screenshot_dock.png
 skill_features.png
 skill_screenshot.png
 
-# 运行时配置与数据（含 API Key 等敏感信息，禁止入库）
+# 运行时配置与数据（含 API Key、聊天历史等敏感信息，禁止入库）
 config.json
 skill_usage.json
+*.log
+py/agent/sessions/
+py/agent/__pycache__/
+__pycache__/
+*.pyc
 
 # 临时测试代码与设计草稿（开发期产物，不纳入版本管理）
 skill_e2e_test.cpp

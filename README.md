@@ -1,12 +1,16 @@
-# ClineLikeChat — Qt 聊天面板组件
+# ClineLikeChat — Qt + Python 混合架构 Coding Agent
 
-一个仿 VSCode Cline 插件风格的 Qt 聊天面板，集成 **Skill 系统**、**LLM 客户端**、**流式输出**、**对话式 Skill 路由**等高级特性。可显示代码、把模型选项渲染成按钮、提供工具参数表格供用户确认。支持 5 套主题，可作为一个 `QWidget` 嵌入到任意宿主程序。
+一个仿 VSCode Cline 插件风格的 Coding Agent，采用 **C++ Qt UI + Python FastAPI 后端** 的混合架构。Qt 端负责聊天界面、Skill 系统与主题；Python 端负责 LLM 推理、MCP 工具调用、上下文压缩与会话持久化。两端通过本地 HTTP + SSE 通信。
 
-- 目标环境：Qt 5.12.2 + VS2022（开发环境 Qt 5.15 + Linux 也可编译）
-- 构建系统：CMake
+集成 **Skill 系统**、**LLM 双协议客户端**、**流式输出**、**MCP 工具自动执行**、**会话持久化与历史恢复**、**上下文压缩** 等特性。支持 5 套主题，可作为一个 `QWidget` 嵌入到任意宿主程序。
+
+- 目标环境：Qt 5.12.2 + VS2022（开发环境 Qt 5.15 + Linux 也可编译）+ Python 3.9+
+- 构建系统：CMake（C++）+ pip（Python 依赖）
 - 编码：所有源码 UTF-8（含 BOM），MSVC 下通过 `/utf-8` 强制按 UTF-8 编译
-- **LLM 兼容**：OpenAI / Anthropic 双协议，支持流式输出（SSE）
-- **Skill 系统**：5 个内置 Skill + 用户自定义，支持参数化、多 Skill 叠加、对话式路由
+- **LLM 兼容**：OpenAI / Anthropic 双协议，由 Python 后端处理流式输出（SSE）
+- **Skill 系统**：5 个内置 Skill + 用户自定义，C++ 端关键词匹配路由（无 LLM 二次调用）
+- **MCP 工具**：通过 FastMCP 桥接，LLM 触发 tool_call 后自动执行，结果回流进同一气泡
+- **会话持久化**：左侧 SessionListPanel 列出全部会话，关闭重开程序可恢复历史
 
 > 本项目使用 TRAE + GLM-5.2 制作
 
@@ -15,8 +19,14 @@
 ## 快速开始
 
 ```powershell
-# 一键运行（自动配置 Qt DLL 路径 + 构建 + 启动）
+# 1. 安装 Python 依赖（首次）
+.\run.ps1 pyinstall
+
+# 2. 一键运行（自动配置 Qt DLL 路径 + 构建 + 启动 Qt + 拉起 Python 后端）
 .\run.ps1 chat
+
+# 检查 Python 依赖是否就绪
+.\run.ps1 pycheck
 
 # 生成集成截图
 .\run.ps1 shot
@@ -25,36 +35,48 @@
 .\run.ps1 all
 ```
 
-首次运行前请在 **File → Settings** (Ctrl+,) 中配置 API 信息。
+启动后 Qt 主程序会自动在后台拉起 `py/agent/app.py`（随机空闲端口），状态栏依次显示 `STARTING BACKEND...` → `READY`。首次运行前请在 **File → Settings** (Ctrl+,) 中配置 API 信息，配置会通过 `POST /config` 推送到 Python 后端。
 
 ---
 
 ## 一、整体架构
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│  宿主程序（你自己的 QMainWindow / QDockWidget）          │
-│                                                          │
-│   ┌───────────────────────────────────────────────────┐ │
-│   │  ChatWidget  (src/ChatWidget.h)                    │ │
-│   │  —— 对外入口，可嵌入任意布局                         │ │
-│   │                                                    │ │
-│   │   ┌──────────────────────────────────────────┐    │ │
-│   │   │  QScrollArea                             │    │ │
-│   │   │   ┌──────────────────────────────────┐   │    │ │
-│   │   │   │  ChatBubble  (可有多条)            │   │    │ │
-│   │   │   │   ├─ QLabel        (Text 段)       │   │    │ │
-│   │   │   │   ├─ CodeEditor     (Code 段)      │   │    │ │
-│   │   │   │   ├─ OptionsWidget  (Options 段)   │   │    │ │
-│   │   │   │   ├─ ToolParamsWidget(ToolParams)  │   │    │ │
-│   │   │   │   └─ 工具批准面板   (ToolApproval) │   │    │ │
-│   │   │   └──────────────────────────────────┘   │    │ │
-│   │   └──────────────────────────────────────────┘    │ │
-│   │   ┌──────────────────────────────────────────┐    │ │
-│   │   │  InputBar  (输入框 + 发送按钮)            │    │ │
-│   │   └──────────────────────────────────────────┘    │ │
-│   └───────────────────────────────────────────────────┘ │
-└─────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│  Qt 主程序 (ClineLikeChat.exe)                                │
+│                                                                │
+│   ┌──────────────────────────────────────────────────────┐   │
+│   │  MainWindow                                            │   │
+│   │   ├─ ChatWidget (中央)                                 │   │
+│   │   │   ├─ ChatBubble * N                                 │   │
+│   │   │   └─ InputBar (+ SkillPicker)                      │   │
+│   │   ├─ SessionListPanel (左 QDockWidget)                 │   │
+│   │   ├─ PythonProcess (QProcess 拉起/健康检查/自动重启)   │   │
+│   │   └─ LLMClient (HTTP + SSE 客户端)                     │   │
+│   └──────────────────────────────────────────────────────┘   │
+│              │ HTTP POST /chat/stream                         │
+│              │ SSE  event: text_chunk / tool_call / done      │
+│              ▼                                                │
+└──────────────┼────────────────────────────────────────────────┘
+               │
+   ┌───────────▼───────────────────────────────────┐
+   │  Python 后端 (py/agent/app.py, FastAPI)        │
+   │   ├─ /health        健康检查                   │
+   │   ├─ /config        POST ApiConfig             │
+   │   ├─ /sessions      CRUD 会话                  │
+   │   └─ /chat/stream   Agent Loop (SSE)           │
+   │       ├─ agent_loop.py    LLM↔tool 循环         │
+   │       ├─ llm_client.py    OpenAI/Anthropic 双协议 │
+   │       ├─ context.py       4 层上下文压缩         │
+   │       ├─ session.py       会话持久化 (atomic)   │
+   │       ├─ mcp_bridge.py    FastMCP 工具桥接       │
+   │       └─ retry.py         指数退避重试           │
+   └───────────────────────────────────────────────┘
+                │ stdio
+                ▼
+   ┌───────────────────────────────────────────────┐
+   │  py/server.py (MCP 工具服务: get_weather 等)   │
+   └───────────────────────────────────────────────┘
 ```
 
 ### 文件结构
@@ -71,20 +93,32 @@
 | `src/InputBar.h/.cpp` | 底部输入框 + Skill 触发（`/` 弹出 SkillPicker）+ 多 Skill 叠加管理 |
 | `src/Theme.h/.cpp` | 5 套主题的颜色 token 定义 + `themeById()` 工厂 |
 | `src/ReplyParser.h/.cpp` | **模型回复解析器**。把 LLM 原始文本解析成 `ContentSegments` |
-| `src/MainWindow.h/.cpp` | 兼容外壳，集成 LLMClient + Skill 路由 + Settings，承担主程序入口 |
+| `src/MainWindow.h/.cpp` | 主窗口：集成 PythonProcess + LLMClient + SessionListPanel + Skill 路由 |
+| **Python 进程 & 会话面板** | |
+| `src/PythonProcess.h/.cpp` | QProcess 拉起 Python 后端，500ms 健康轮询，崩溃自动重启（max 3） |
+| `src/SessionListPanel.h/.cpp` | 左侧 QDockWidget：列出/新建/删除会话，点击切换 |
 | **Skill 系统** | |
 | `src/Skill.h/.cpp` | Skill 数据结构 + SkillParam 参数定义 |
-| `src/SkillManager.h/.cpp` | Skill 加载/搜索/匹配/排序/统计，`catalogPrompt()` 生成 Skill 目录 |
+| `src/SkillManager.h/.cpp` | Skill 加载/搜索/匹配/排序/统计，`matchByKeywords()` 关键词路由 |
 | `src/SkillMdParser.h/.cpp` | SKILL.md 文件解析器（YAML frontmatter + 正文） |
 | `src/SkillPicker.h/.cpp` | Skill 选择器（富文本显示 + 实时过滤） |
 | `src/SkillParamsDialog.h/.cpp` | Skill 参数输入对话框 |
 | `src/ToolRegistry.h/.cpp` | 工具元数据注册 + allowed-tools 权限校验 |
-| **LLM 集成** | |
-| `src/LLMClient.h/.cpp` | LLM 客户端：OpenAI/Anthropic 双协议、流式 SSE、`routeSkill()` 对话式路由 |
-| `src/SettingsDialog.h/.cpp` | API 配置对话框（URL/Key/Model/Type），持久化到 `config.json` |
+| **LLM 集成（HTTP 客户端）** | |
+| `src/LLMClient.h/.cpp` | **HTTP + SSE 客户端**：POST /chat/stream，解析多行 `data:` 事件，分发 streamChunk/toolCallReceived 等信号 |
+| `src/SettingsDialog.h/.cpp` | API 配置对话框（URL/Key/Model/Type），持久化到 `config.json`，启动时 POST 给 Python |
+| **Python 后端** | |
+| `py/agent/app.py` | FastAPI 入口：/health /config /sessions CRUD /chat/stream (SSE) |
+| `py/agent/agent_loop.py` | Agent Loop：LLM→tool_call→MCP execute→tool_result→LLM，max 20 轮 |
+| `py/agent/llm_client.py` | OpenAI/Anthropic 双协议流式，tool_call 分片累积 |
+| `py/agent/context.py` | TokenCounter + 4 层上下文压缩（truncate/snip/microcompact/auto-compact） |
+| `py/agent/session.py` | Session dataclass + atomic_write + CRUD |
+| `py/agent/mcp_bridge.py` | McpBridge 单例：asyncio.Lock 保护 connect/disconnect/call_tool |
+| `py/agent/config.py` / `retry.py` / `logging_setup.py` | 配置持久化 / 指数退避 / 日志 |
+| `py/server.py` | MCP 工具服务（示例：get_weather, get_year） |
 | **资源** | |
 | `resources/skills/*/SKILL.md` | 5 个内置 Skill 定义文件 |
-| `run.ps1` | 一键运行脚本（构建+启动+截图） |
+| `run.ps1` | 一键运行脚本（构建+启动+pycheck+pyinstall） |
 
 ### 核心数据流
 
@@ -571,42 +605,24 @@ QString combined = inputBar->combinedSystemPrompt();
 
 输入框上方会显示所有已激活 Skill 的标签，可逐个移除。
 
-#### ③ 对话式 Skill 路由（对齐 Claude Code）
+#### ③ Skill 路由（关键词匹配）
 
-**两阶段流程**，让模型自己选择是否使用 Skill：
-
-```
-Phase 1: 路由
-  ┌─────────────────────────────────────────┐
-  │ system: "You have access to Skills:..." │ ← catalogPrompt()
-  │ user:   "帮我审查这段代码"               │
-  │ tools:  [{"name": "use_skill", ...}]    │
-  └─────────────────────────────────────────┘
-                    ↓
-  模型输出 tool_calls: [{"skill_id": "code-review"}]
-                    ↓
-Phase 2: 生成
-  ┌─────────────────────────────────────────┐
-  │ system: "You are a senior reviewer..."  │ ← 选中 Skill 的 prompt
-  │ user:   "帮我审查这段代码"               │
-  │ stream: true                            │
-  └─────────────────────────────────────────┘
-                    ↓
-  流式输出最终回复
-```
-
-**Fallback 机制**：当模型不支持 `tool_calls` 时，自动回退到客户端关键词匹配（基于 name/alias/tag 计算分数，>= 4 分则自动加载）。
-
-#### ④ 工具调用集成
-
-通过 `ToolRegistry` 管理 12 个内置工具，Skill 的 `allowed-tools` 字段限制可用工具：
+用户发送消息时，C++ 端 `SkillManager::matchByKeywords(text)` 在所有 Skill 中按 name(10 分)/id(8 分)/alias(8 分)/tag(4 分) 计分，分数 ≥ 4 且为最高分时自动激活该 Skill 的 system prompt，**无需 LLM 二次调用**：
 
 ```cpp
-// 在 combinedSystemPrompt() 中注入工具使用约束
-"你只能使用以下工具: read_file, search_code"
+// MainWindow.cpp
+Skill matched = m_chat->skillManager()->matchByKeywords(text);
+QString sysPrompt = matched.isValid() ? matched.resolvedSystemPrompt() : QString();
+m_llm->sendMessage(text, sysPrompt, m_currentSessionId);
 ```
 
-工具审批面板在聊天气泡中渲染，用户可批准/拒绝。
+用户也可在输入框键入 `/` 手动激活 Skill（`SkillPicker` 弹出），手动激活优先级高于关键词匹配。
+
+#### ④ 工具调用集成（MCP 自动执行）
+
+Python 后端通过 `mcp_bridge.py` 连接 `py/server.py`（FastMCP stdio 协议）。LLM 在回复中触发 `tool_call` 时，后端自动执行对应工具并把 `tool_result` 回灌给 LLM，循环直到 LLM 不再调用工具（max 20 轮）。整个流程**无需用户审批**，C++ 端通过 SSE 事件在同一个流式气泡内显示 `🔧 调用工具 name(args)` 和 `→ 结果`。
+
+`ToolRegistry` 仍保留用于 Skill 的 `allowed-tools` 元数据校验（提示词层面约束 LLM），但实际工具执行由 Python MCP 桥接完成。
 
 #### ⑤ 使用频率排序
 
@@ -630,48 +646,80 @@ SkillPicker 中常用 Skill 自动置顶显示。
 
 | 方式 | 操作 | 说明 |
 |------|------|------|
-| **手动触发** | 输入 `/` → 弹出 SkillPicker → 选择 | 跳过路由，直接使用选中 Skill |
-| **对话式路由** | 直接输入消息（不带 `/`） | 模型自动选择是否使用 Skill |
-| **Fallback 匹配** | 模型不支持 tool_calls 时 | 客户端关键词匹配（name/alias/tag） |
+| **手动触发** | 输入 `/` → 弹出 SkillPicker → 选择 | 跳过关键词匹配，直接使用选中 Skill（可叠加多个） |
+| **关键词自动匹配** | 直接输入消息（不带 `/`） | `matchByKeywords` 按 name/id/alias/tag 计分，≥4 分自动激活 |
 
 ---
 
-## 十、LLM 集成与流式输出
+## 十、LLM 集成与流式输出（HTTP + SSE）
 
-### 10.1 双协议支持
+C++ 端的 `LLMClient` 不再直接调用 LLM API，而是作为 **HTTP + SSE 客户端** 与本地 Python 后端通信。所有 LLM 协议细节（OpenAI/Anthropic 双协议、tool_call 分片累积、上下文压缩）都在 Python 端处理。
 
-`LLMClient` 同时支持 OpenAI 和 Anthropic 两种 API 协议：
+### 10.1 通信协议
 
-| 协议 | 端点 | 认证头 | 请求格式 |
-|------|------|--------|---------|
-| OpenAI | `/v1/chat/completions` | `Authorization: Bearer <key>` | `{messages: [{role, content}]}` |
-| Anthropic | `/v1/messages` | `x-api-key: <key>` | `{system, messages: [{role, content}]}` |
+| 端点 | 方法 | 用途 |
+|------|------|------|
+| `/health` | GET | 健康检查（PythonProcess 轮询） |
+| `/config` | POST | 推送 ApiConfig（api_type/api_url/api_key/model_id） |
+| `/sessions` | GET/POST | 列出/新建会话 |
+| `/sessions/{id}` | GET/DELETE | 加载/删除会话（含 messages 数组） |
+| `/sessions/{id}/clear` | POST | 清空会话消息 |
+| `/chat/stream` | POST | **核心**：Agent Loop + SSE 流式输出 |
 
-在 Settings 中切换 API Type 即可，URL 会自动拼接对应路径。
+`POST /chat/stream` 请求体：
+```json
+{"session_id": "uuid", "message": "用户输入", "system_prompt": "Skill 系统提示词（可选）"}
+```
 
-### 10.2 流式输出（SSE）
+### 10.2 SSE 事件类型
+
+Python 后端通过 `text/event-stream` 返回以下事件，C++ 端 `LLMClient::parseSSEBlock` 解析：
+
+| event | data 字段 | C++ 信号 |
+|-------|----------|----------|
+| `text_chunk` | `{"delta": "增量文本"}` | `streamChunk(delta)` |
+| `tool_call` | `{"name": "get_weather", "args": {...}}` | `toolCallReceived(name, args)` |
+| `tool_result` | `{"name": "...", "result": "..."}` | `toolResultReceived(name, result)` |
+| `usage` | `{"total": 1234}` | `tokenUsageReceived(total)` |
+| `done` | `{"session_id": "...", "tokens": 1234}` | `streamFinished(m_fullText)` |
+| `error` | `{"message": "...", "retryable": false}` | `errorOccurred(message)` |
+
+SSE 协议要求多个 `data:` 行累积成一个事件，C++ 端按 `\n\n` 分块解析。
+
+### 10.3 流式 UI 渲染
 
 ```cpp
-connect(m_llm, &LLMClient::streamStarted, []() { /* UI 显示 "STREAMING..." */ });
-connect(m_llm, &LLMClient::streamChunk, [](const QString &delta) {
-    // delta 是增量文本，实时追加到聊天气泡
-    // 气泡中显示带光标 ▌ 的实时文本
+connect(m_llm, &LLMClient::streamStarted, []() { /* 状态栏 STREAMING... */ });
+connect(m_llm, &LLMClient::streamChunk, m_chat, &ChatWidget::appendStreamChunk);
+connect(m_llm, &LLMClient::toolCallReceived, [](const QString &name, const QString &args) {
+    // 在同一流式气泡内追加 "🔧 调用工具 name(args)"
 });
 connect(m_llm, &LLMClient::streamFinished, [](const QString &fullText) {
-    // 流结束，fullText 是完整回复
-    // 替换为最终渲染的气泡
+    if (m_llm->hadToolCalls()) {
+        m_chat->finishStream();              // 工具调用轮次：保留原始流式气泡
+    } else {
+        auto segs = parseAssistantReply(fullText);
+        m_chat->finishStreamWithSegments(segs);  // 普通回复：替换为解析后的段
+    }
 });
 ```
 
-### 10.3 对话历史
+**单气泡规则**：一次 `/chat/stream` 请求（可能含多轮 LLM↔tool 循环）的所有 `text_chunk` 和 `tool_call` 都渲染在同一个流式气泡内，`done` 事件到达时才结束。
 
-OpenAI 模式下，`LLMClient` 内部维护 `m_history`，每次请求自动携带历史对话：
+### 10.4 双协议支持（Python 端）
 
-```cpp
-m_llm->sendMessage("你好");           // 发送，记录到 history
-m_llm->sendMessage("继续刚才的话题");  // 自动带上之前的对话上下文
-m_llm->clearHistory();                // 清空历史
-```
+Python 后端的 `llm_client.py` 同时支持 OpenAI 和 Anthropic：
+
+| 协议 | SDK | 端点 | tool_call 格式 |
+|------|-----|------|----------------|
+| OpenAI | `openai` Python SDK | `<api_url>/v1/chat/completions` | `tool_calls[].function.arguments` (JSON 字符串分片) |
+| Anthropic | `httpx` 直接调用 | `<api_url>/v1/messages` | `content[].type == "tool_use"` |
+
+OpenAI 协议下 URL 自动补 `/v1` 后缀。在 Settings 中切换 API Type 即可，配置通过 `POST /config` 实时推送到 Python 后端，无需重启。
+
+### 10.5 对话历史
+
+会话历史由 Python 端 `session.py` 持久化到 `py/agent/sessions/<uuid>/{meta,messages}.json`。每次 `text_chunk`/`tool_call`/`tool_result`/`done` 事件触发时增量保存（atomic_write：tempfile + os.replace）。重启程序后通过 `GET /sessions/{id}` 恢复历史，`ChatWidget::loadMessages()` 渲染到气泡。
 
 ---
 
@@ -688,7 +736,7 @@ m_llm->clearHistory();                // 清空历史
 | API Key | 密钥 | `sk-xxxx` |
 | Model ID | 模型 ID | `mimo-v2.5-pro` |
 
-### 11.2 配置持久化
+### 11.2 配置持久化与推送
 
 配置保存在 exe 同目录的 `config.json`：
 
@@ -701,27 +749,55 @@ m_llm->clearHistory();                // 清空历史
 }
 ```
 
-启动时自动加载，修改后点 Save 立即生效。
+启动时自动加载，Python 后端就绪后通过 `POST /config` 推送过去。在 Settings 中修改并 Save 后，新配置会立即 POST 给 Python 后端，**无需重启**。
+
+### 11.3 Python 路径配置
+
+`PythonProcess` 自动查找 `python`/`python3`/`py`（Windows）。如需指定，可在 `QSettings("QtChatWidget")` 中写入 `pythonPath`：
+
+```powershell
+# 例：使用 Anaconda 的 Python
+Set-ItemProperty -Path "HKCU:\Software\QtChatWidget" -Name "pythonPath" -Value "D:\Application\Anaconda\python.exe"
+```
+
+或在 Settings 对话框中增加对应字段（如未在 UI 暴露，可直接编辑注册表/配置文件）。
 
 ---
 
 ## 十二、构建说明
 
-### 12.1 CMake 配置
+### 12.1 依赖
+
+**C++ 端**：
+- Qt 5.12.2+（Widgets / Gui / Core / Svg / Network）
+- MSVC 2017+ 或兼容编译器
+- CMake 3.10+
+
+**Python 端**：
+- Python 3.9+
+- 依赖见 `py/agent/requirements.txt`：`fastapi` / `uvicorn` / `openai` / `httpx` / `fastmcp`
+
+```powershell
+# 一键安装 Python 依赖
+.\run.ps1 pyinstall
+# 或手动
+pip install -r py/agent/requirements.txt
+```
+
+### 12.2 CMake 配置
 
 ```cmake
 cmake_minimum_required(VERSION 3.10)
 project(ClineLikeChat)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 11)
 set(CMAKE_AUTOMOC ON)
 
-find_package(Qt5 REQUIRED COMPONENTS Widgets Gui Core Network)
+find_package(Qt5 REQUIRED COMPONENTS Widgets Gui Core Svg Network)
 
 # 强制源码按 UTF-8 编码编译（MSVC 默认按系统 ANSI 解析，会导致中文乱码）
 if(MSVC)
     add_compile_options(/utf-8)
-    add_compile_options(/execution-charset:utf-8)
 endif()
 
 add_executable(ClineLikeChat WIN32
@@ -736,20 +812,22 @@ add_executable(ClineLikeChat WIN32
     src/ToolParamsWidget.cpp
     src/Theme.cpp
     src/ReplyParser.cpp
-    src/LLMClient.cpp           # LLM 客户端
+    src/LLMClient.cpp           # HTTP + SSE 客户端
     src/SettingsDialog.cpp      # API 设置对话框
+    src/PythonProcess.cpp       # Python 进程管理
+    src/SessionListPanel.cpp    # 会话列表面板
     src/Skill.cpp               # Skill 数据结构
-    src/SkillManager.cpp        # Skill 管理
+    src/SkillManager.cpp        # Skill 管理 + matchByKeywords
     src/SkillMdParser.cpp       # SKILL.md 解析
     src/SkillPicker.cpp         # Skill 选择器
     src/SkillParamsDialog.cpp   # Skill 参数对话框
     src/ToolRegistry.cpp        # 工具注册
 )
 target_include_directories(ClineLikeChat PRIVATE src)
-target_link_libraries(ClineLikeChat PRIVATE Qt5::Widgets Qt5::Gui Qt5::Core Qt5::Network)
+target_link_libraries(ClineLikeChat PRIVATE Qt5::Widgets Qt5::Gui Qt5::Core Qt5::Svg Qt5::Network)
 ```
 
-### 12.2 构建步骤
+### 12.3 构建步骤
 
 ```bash
 mkdir build && cd build
@@ -763,13 +841,14 @@ cmake --build . --config Release
 .\run.ps1 build
 ```
 
-### 12.3 需要加入现有项目时
+### 12.4 需要加入现有项目时
 
 把 `src/` 目录下所有文件加入你的工程，确保：
 - `CMAKE_AUTOMOC ON`（处理 Q_OBJECT 宏）
 - MSVC 下加 `/utf-8` 编译选项
-- 链接 `Qt5::Widgets Qt5::Gui Qt5::Core Qt5::Network`（Network 用于 LLMClient）
+- 链接 `Qt5::Widgets Qt5::Gui Qt5::Core Qt5::Svg Qt5::Network`（Network 用于 LLMClient HTTP 通信）
 - 添加 `resources.qrc` 到资源文件
+- Python 后端目录 `py/agent/` 需与 exe 路径关系正确（开发态 exe 在 `build/Release/`，会回溯两级查找 `../../py/agent/app.py`）
 
 然后在你的代码里 `#include "ChatWidget.h"` 即可使用。
 
@@ -786,3 +865,9 @@ cmake --build . --config Release
 4. **QSS 对原生 viewport 的局限**：`QTableWidget` / `QComboBox` / `QHeaderView` 的 viewport 不完全受 QSS 控制，必须靠 `QPalette` 设置底色。这也是为什么主题切换时除了 QSS 还要 `applyPalette`。
 
 5. **ReplyParser 的容错**：如果模型返回的 JSON 解析失败，或者根本没有 JSON 块，`parseAssistantReply` 会把原始回复当作一条 `Text` 段返回，不会出现空气泡。
+
+6. **Python 进程生命周期**：Qt 主程序通过 `QProcess` 拉起 Python 后端，正常关闭时 `closeEvent` 会 `terminate()` Python；若主程序被 `taskkill /F` 强杀，Python 进程会残留，需手动结束。崩溃自动重启上限 3 次，超过后弹出错误对话框。
+
+7. **Python 后端日志**：`py/agent/agent.log` 记录 LLM 请求、tool_call、压缩事件与异常堆栈，调试问题时优先查看。
+
+8. **端口分配**：PythonProcess 通过 `QTcpServer` 监听随机空闲端口（不固定 8000），避免与已占用端口冲突。C++ 端通过 `ready(quint16 port)` 信号拿到实际端口。

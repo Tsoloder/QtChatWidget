@@ -18,6 +18,59 @@
 #define SKIP_EMPTY_PARTS QString::SkipEmptyParts
 #endif
 
+static bool isSafeSkillId(const QString &id)
+{
+    static const QRegularExpression pattern(
+        QStringLiteral("^[a-z0-9][a-z0-9-]{0,63}$"));
+    return pattern.match(id).hasMatch();
+}
+
+static bool isPathInside(const QString &basePath, const QString &candidatePath)
+{
+    const QString base = QDir::cleanPath(QFileInfo(basePath).absoluteFilePath());
+    const QString candidate = QDir::cleanPath(QFileInfo(candidatePath).absoluteFilePath());
+    const QString prefix = base.endsWith(QDir::separator())
+        ? base : base + QDir::separator();
+#ifdef Q_OS_WIN
+    return candidate.startsWith(prefix, Qt::CaseInsensitive);
+#else
+    return candidate.startsWith(prefix, Qt::CaseSensitive);
+#endif
+}
+
+static bool copySkillDirectory(const QString &sourcePath, const QString &targetPath,
+                               int *totalFiles, qint64 *totalBytes)
+{
+    QDir source(sourcePath);
+    if (!source.exists())
+        return false;
+    QDir target;
+    if (!target.mkpath(targetPath))
+        return false;
+
+    const QFileInfoList entries = source.entryInfoList(
+        QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot | QDir::NoSymLinks);
+    for (const QFileInfo &entry : entries) {
+        const QString destination = QDir(targetPath).filePath(entry.fileName());
+        if (entry.isDir()) {
+            if (!copySkillDirectory(entry.absoluteFilePath(), destination,
+                                    totalFiles, totalBytes))
+                return false;
+        } else {
+            ++(*totalFiles);
+            *totalBytes += entry.size();
+            if (*totalFiles > 512 || entry.size() > 1024 * 1024 ||
+                *totalBytes > 20 * 1024 * 1024)
+                return false;
+            if (QFile::exists(destination) && !QFile::remove(destination))
+                return false;
+            if (!QFile::copy(entry.absoluteFilePath(), destination))
+                return false;
+        }
+    }
+    return true;
+}
+
 static bool skillCompareByUseCount(const Skill &a, const Skill &b)
 {
     if (a.useCount != b.useCount)
@@ -90,6 +143,9 @@ bool SkillManager::loadSkillFromDirectory(const QString &dirPath, bool builtin)
         if (skill.name.isEmpty())
             skill.name = skill.id;
     }
+    skill.id = skill.id.trimmed().toLower();
+    if (!isSafeSkillId(skill.id))
+        return false;
 
     skill.builtin = builtin;
     m_skills.insert(skill.id, skill);
@@ -112,8 +168,13 @@ bool SkillManager::installFromMarkdownFile(const QString &filePath)
         if (skill.name.isEmpty())
             skill.name = baseName;
     }
+    skill.id = skill.id.trimmed().toLower();
+    if (!isSafeSkillId(skill.id))
+        return false;
 
-    QString targetDir = userSkillsDir() + QLatin1Char('/') + skill.id;
+    QString targetDir = QDir(userSkillsDir()).filePath(skill.id);
+    if (!isPathInside(userSkillsDir(), targetDir))
+        return false;
     QDir dir;
     if (!dir.mkpath(targetDir))
         return false;
@@ -139,11 +200,36 @@ bool SkillManager::installFromMarkdownFile(const QString &filePath)
 
 bool SkillManager::installFromDirectory(const QString &dirPath)
 {
-    QFileInfo skillMd(dirPath + QStringLiteral("/SKILL.md"));
+    QFileInfo skillMd(QDir(dirPath).filePath(QStringLiteral("SKILL.md")));
     if (!skillMd.exists() || !skillMd.isFile())
         return false;
 
-    return installFromMarkdownFile(skillMd.absoluteFilePath());
+    Skill skill;
+    if (!SkillMdParser::parseFile(skillMd.absoluteFilePath(), &skill))
+        return false;
+    skill.id = skill.id.trimmed().toLower();
+    if (!isSafeSkillId(skill.id))
+        return false;
+
+    const QString targetDir = QDir(userSkillsDir()).filePath(skill.id);
+    if (!isPathInside(userSkillsDir(), targetDir))
+        return false;
+    QDir existing(targetDir);
+    if (existing.exists() && !existing.removeRecursively())
+        return false;
+    int totalFiles = 0;
+    qint64 totalBytes = 0;
+    if (!copySkillDirectory(QFileInfo(dirPath).absoluteFilePath(), targetDir,
+                            &totalFiles, &totalBytes)) {
+        QDir(targetDir).removeRecursively();
+        return false;
+    }
+
+    skill.builtin = false;
+    skill.sourcePath = QDir(targetDir).filePath(QStringLiteral("SKILL.md"));
+    m_skills.insert(skill.id, skill);
+    emit skillInstalled(skill.id);
+    return true;
 }
 
 bool SkillManager::uninstall(const QString &id)
@@ -155,7 +241,11 @@ bool SkillManager::uninstall(const QString &id)
     if (skill.builtin)
         return false;
 
-    QString targetDir = userSkillsDir() + QLatin1Char('/') + id;
+    if (!isSafeSkillId(id))
+        return false;
+    QString targetDir = QDir(userSkillsDir()).filePath(id);
+    if (!isPathInside(userSkillsDir(), targetDir))
+        return false;
     QDir dir(targetDir);
     if (dir.exists()) {
         dir.removeRecursively();
@@ -328,6 +418,27 @@ QList<Skill> SkillManager::suggestRelevant(const QString &text, int maxCount) co
         result.append(scored[i].second);
     }
     return result;
+}
+
+Skill SkillManager::matchByKeywords(const QString &text) const
+{
+    QString lower = text.toLower();
+    Skill best;
+    int bestScore = 0;
+    for (const Skill &s : m_skills) {
+        int score = 0;
+        if (lower.contains(s.name.toLower())) score += 10;
+        if (lower.contains(s.id.toLower())) score += 8;
+        for (const QString &alias : s.aliases)
+            if (lower.contains(alias.toLower())) score += 8;
+        for (const QString &tag : s.tags)
+            if (lower.contains(tag.toLower())) score += 4;
+        if (score >= 4 && score > bestScore) {
+            bestScore = score;
+            best = s;
+        }
+    }
+    return best;
 }
 
 QString SkillManager::catalogPrompt() const

@@ -3,6 +3,7 @@
 #include <QFrame>
 #include <QList>
 #include "Skill.h"
+#include "Theme.h"
 
 class QListWidget;
 class QListWidgetItem;
@@ -20,6 +21,8 @@ public:
 
     int selectedIndex() const { return m_selectedIndex; }
     void setSelectedIndex(int idx);
+
+    void setTheme(ThemeId id);
 
 signals:
     void skillSelected(const Skill &skill);
@@ -45,4 +48,5 @@ private:
     QList<Skill> m_allSkills;
     QList<Skill> m_filteredSkills;
     int m_selectedIndex;
+    ThemeId m_theme = ThemeId::OneDarkPro;
 };

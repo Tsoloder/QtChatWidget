@@ -161,10 +161,11 @@ void SkillPicker::updateList()
     for (const Skill &s : m_filteredSkills) {
         auto *item = new QListWidgetItem(m_list);
         QString text = QStringLiteral("<b>%1</b><br><span style=\"color:%2;font-size:11px;\">%3</span>")
-                           .arg(s.name, QStringLiteral("#888"), s.description);
+                           .arg(s.name.toHtmlEscaped(), QStringLiteral("#888"),
+                                s.description.toHtmlEscaped());
         if (!s.category.isEmpty()) {
             text = QStringLiteral("<span style=\"color:%3;font-size:10px;\">[%1]</span> %2")
-                       .arg(s.category, text, QStringLiteral("#666"));
+                       .arg(s.category.toHtmlEscaped(), text, QStringLiteral("#666"));
         }
         item->setText(text);
         item->setData(Qt::UserRole, s.id);
@@ -287,4 +288,17 @@ void SkillPicker::onItemClicked(QListWidgetItem *item)
 {
     Q_UNUSED(item);
     acceptCurrent();
+}
+
+void SkillPicker::setTheme(ThemeId id)
+{
+    m_theme = id;
+    const Theme &t = themeById(id);
+    QString qss = QString(
+        QStringLiteral("QListView { background: %1; color: %2; border: 1px solid %3; border-radius: 6px; }"
+                       "QListView::item { padding: 8px 12px; }"
+                       "QListView::item:hover { background: %4; }"
+                       "QListView::item:selected { background: %5; color: %1; }"))
+        .arg(t.assistantBubbleBg, t.msgTextColor, t.inputBorder, t.optionBtnHoverBg, t.inputAccent);
+    m_list->setStyleSheet(qss);
 }

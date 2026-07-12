@@ -2,6 +2,8 @@
 
 #include <QObject>
 #include <QString>
+#include <QStringList>
+#include <QMap>
 #include <QJsonArray>
 
 class QNetworkAccessManager;
@@ -12,12 +14,12 @@ class LLMClient : public QObject
     Q_OBJECT
 public:
     enum ApiType {
-        OpenAI     = 0,  // OpenAI-compatible (/v1/chat/completions)
-        Anthropic  = 1   // Anthropic (/v1/messages)
+        OpenAI     = 0,
+        Anthropic  = 1
     };
 
     struct Config {
-        ApiType apiType = Anthropic;
+        ApiType apiType = OpenAI;
         QString apiUrl;
         QString apiKey;
         QString modelId;
@@ -25,48 +27,50 @@ public:
 
     explicit LLMClient(QObject *parent = nullptr);
 
-    void setConfig(const Config &config);
+    void setBaseUrl(const QString &url) { m_baseUrl = url; }
+    QString baseUrl() const { return m_baseUrl; }
+
+    // 暴露内部的 QNetworkAccessManager 供 SessionListPanel 等组件复用
+    QNetworkAccessManager *networkManager() const { return m_net; }
+
+    void setConfig(const Config &config) { m_config = config; }
     Config config() const { return m_config; }
 
     void sendMessage(const QString &userMessage,
-                     const QString &systemPrompt = QString());
+                     const QString &systemPrompt,
+                     const QString &sessionId,
+                     const QJsonArray &selectedSkills = QJsonArray(),
+                     const QStringList &skillRoots = QStringList(),
+                     const QString &writableSkillRoot = QString());
+    void postConfig(const Config &cfg);
+    void abortStream();
 
-    // Route: ask model which Skill to use (non-streaming, quick call)
-    void routeSkill(const QString &userMessage, const QString &catalogPrompt);
-
-    void clearHistory();
     bool isBusy() const { return m_currentReply != nullptr; }
+    bool hadToolCalls() const { return m_hadToolCalls; }
 
 signals:
-    void replyReceived(const QString &rawReply);
-    void errorOccurred(const QString &error);
-
-    // Streaming signals
     void streamStarted();
     void streamChunk(const QString &delta);
     void streamFinished(const QString &fullText);
-
-    // Routing signals
-    void skillRouted(const QString &skillId);   // model selected a Skill
-    void noSkillNeeded();                        // model decided no Skill needed
+    void toolCallReceived(const QString &name, const QString &args);
+    void toolResultReceived(const QString &name, const QString &result);
+    void tokenUsageReceived(int total);
+    void errorOccurred(const QString &error);
 
 private slots:
-    void onReplyFinished();
     void onReadyRead();
-    void onRouteReplyFinished();
+    void onReplyFinished();
 
 private:
-    QByteArray buildOpenAIRequest(const QString &userMessage, const QString &systemPrompt);
-    QByteArray buildAnthropicRequest(const QString &userMessage, const QString &systemPrompt);
-    QString parseOpenAIReply(const QByteArray &data);
-    QString parseAnthropicReply(const QByteArray &data);
-    void processSSEData(const QByteArray &chunk);
-
     QNetworkAccessManager *m_net;
     Config m_config;
-    QNetworkReply *m_currentReply;
-    QJsonArray m_history;  // conversation history (OpenAI message format)
-    bool m_streaming;
-    QString m_streamBuffer;  // incomplete SSE line buffer
-    QString m_streamAccumulator;  // accumulated full text
+    QString m_baseUrl;
+    QNetworkReply *m_currentReply = nullptr;
+    QByteArray m_sseBuffer;
+    QString m_fullText;
+    bool m_hadToolCalls = false;
+
+    void resetStreamState();
+    void parseSSEBlock(const QByteArray &block);
+    QMap<QString, QString> parseEventBlock(const QByteArray &block);
 };

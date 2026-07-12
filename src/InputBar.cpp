@@ -17,6 +17,7 @@
 #include <QTextCursor>
 #include <QResizeEvent>
 #include <QDebug>
+#include <QColor>
 #include <QPropertyAnimation>
 #include <QTimer>
 
@@ -49,7 +50,8 @@ InputBar::InputBar(QWidget *parent)
     m_suggestionLayout->setContentsMargins(8, 2, 8, 2);
     m_suggestionLayout->setSpacing(6);
     m_suggestionLabel = new QLabel(QStringLiteral("💡 建议使用 Skill："));
-    m_suggestionLabel->setStyleSheet(QStringLiteral("color: #888; font-size: 11px;"));
+    m_suggestionLabel->setObjectName("suggestionLabel");
+    m_suggestionLabel->setStyleSheet(QStringLiteral("font-size: 11px;"));
     m_suggestionLayout->addWidget(m_suggestionLabel);
     m_suggestionLayout->addStretch(1);
     layout->addWidget(m_suggestionBar);
@@ -105,6 +107,9 @@ InputBar::InputBar(QWidget *parent)
     m_suggestionTimer->setSingleShot(true);
     m_suggestionTimer->setInterval(500);
     connect(m_suggestionTimer, &QTimer::timeout, this, &InputBar::onSuggestionTimer);
+
+    // 初始主题
+    updateThemeStyles(themeById(m_themeId));
 }
 
 void InputBar::setSkillManager(SkillManager *manager)
@@ -221,35 +226,41 @@ void InputBar::updateSkillTags()
 
     m_skillTagBar->setVisible(true);
 
+    const Theme t = themeById(m_themeId);
+    const QString accent = t.inputFocusAccent;
+    const QString textColor = t.msgTextColor;
+    const QString dimColor = t.statusColor;
+
     for (const Skill &s : m_activeSkills) {
         auto *tagFrame = new QFrame;
         tagFrame->setObjectName("skillTagItem");
         tagFrame->setFixedHeight(24);
         tagFrame->setStyleSheet(QStringLiteral(
             "QFrame#skillTagItem {"
-            "  background: rgba(100, 180, 255, 0.15);"
-            "  border: 1px solid rgba(100, 180, 255, 0.3);"
+            "  background: %1;"
+            "  border: 1px solid %2;"
             "  border-radius: 12px;"
             "}"
-        ));
+        ).arg(rgba(accent, 30), rgba(accent, 60)));
 
         auto *tagHLayout = new QHBoxLayout(tagFrame);
         tagHLayout->setContentsMargins(10, 2, 4, 2);
         tagHLayout->setSpacing(4);
 
         auto *slashLabel = new QLabel(QStringLiteral("/"));
-        slashLabel->setStyleSheet(QStringLiteral("color: #64b4ff; font-weight: bold;"));
+        slashLabel->setStyleSheet(QStringLiteral("color: %1; font-weight: bold;").arg(accent));
         tagHLayout->addWidget(slashLabel);
 
         auto *nameLabel = new QLabel(s.name);
-        nameLabel->setStyleSheet(QStringLiteral("color: #c8d8e8; font-size: 12px;"));
+        nameLabel->setStyleSheet(QStringLiteral("color: %1; font-size: 12px;").arg(textColor));
         tagHLayout->addWidget(nameLabel);
 
         if (s.hasParams()) {
             auto *paramBadge = new QLabel(QStringLiteral("%1 param(s)").arg(s.params.size()));
             paramBadge->setStyleSheet(QStringLiteral(
-                "color: #888; font-size: 10px; padding: 1px 4px;"
-                "background: rgba(255,255,255,0.05); border-radius: 6px;"));
+                "color: %1; font-size: 10px; padding: 1px 4px;"
+                "background: %2; border-radius: 6px;"
+            ).arg(dimColor, rgba(textColor, 12)));
             tagHLayout->addWidget(paramBadge);
         }
 
@@ -258,11 +269,11 @@ void InputBar::updateSkillTags()
         clearBtn->setCursor(Qt::PointingHandCursor);
         clearBtn->setStyleSheet(QStringLiteral(
             "QPushButton {"
-            "  background: transparent; color: #888; border: none;"
+            "  background: transparent; color: %1; border: none;"
             "  font-size: 14px; font-weight: bold; padding: 0;"
             "}"
-            "QPushButton:hover { color: #fff; }"
-        ));
+            "QPushButton:hover { color: %2; }"
+        ).arg(dimColor, textColor));
         QString skillId = s.id;
         connect(clearBtn, &QPushButton::clicked, this, [this, skillId]() {
             removeActiveSkill(skillId);
@@ -278,11 +289,11 @@ void InputBar::updateSkillTags()
         clearAllBtn->setCursor(Qt::PointingHandCursor);
         clearAllBtn->setStyleSheet(QStringLiteral(
             "QPushButton {"
-            "  background: transparent; color: #888; border: none;"
+            "  background: transparent; color: %1; border: none;"
             "  font-size: 11px; text-decoration: underline;"
             "}"
-            "QPushButton:hover { color: #c8d8e8; }"
-        ));
+            "QPushButton:hover { color: %2; }"
+        ).arg(dimColor, textColor));
         connect(clearAllBtn, &QPushButton::clicked, this, &InputBar::clearActiveSkills);
         m_tagLayout->addWidget(clearAllBtn);
     }
@@ -293,6 +304,12 @@ void InputBar::updateSkillTags()
 void InputBar::clearEdit()
 {
     m_edit->clear();
+}
+
+void InputBar::setBusy(bool busy)
+{
+    m_edit->setEnabled(!busy);
+    m_sendBtn->setEnabled(!busy);
 }
 
 bool InputBar::isInSkillContext() const
@@ -483,6 +500,36 @@ void InputBar::onSend()
     emit send(text);
 }
 
+// static
+QString InputBar::rgba(const QString &hex, int alpha)
+{
+    QColor c(hex);
+    return QStringLiteral("rgba(%1,%2,%3,%4)")
+        .arg(c.red()).arg(c.green()).arg(c.blue()).arg(alpha);
+}
+
+void InputBar::updateThemeStyles(const Theme &t)
+{
+    // 更新常驻部件的颜色
+    m_suggestionLabel->setStyleSheet(QStringLiteral("color: %1; font-size: 11px;").arg(t.statusColor));
+    m_skillTagBar->setStyleSheet(QString());  // 清除，让内部子部件自己的 QSS 生效
+    m_suggestionBar->setStyleSheet(QString());
+}
+
+void InputBar::setTheme(ThemeId id)
+{
+    if (m_themeId == id)
+        return;
+    m_themeId = id;
+    updateThemeStyles(themeById(id));
+    updateSkillTags();
+    // 建议栏随主题更新（如果当前可见）
+    if (m_suggestionBar->isVisible()) {
+        // 重建建议按钮的样式：通过重新触发 onSuggestionTimer
+        onSuggestionTimer();
+    }
+}
+
 void InputBar::resizeEvent(QResizeEvent *event)
 {
     QWidget::resizeEvent(event);
@@ -531,23 +578,26 @@ void InputBar::updateSuggestionBar(const QList<Skill> &suggestions)
 
     m_suggestionBar->setVisible(true);
 
+    const Theme t = themeById(m_themeId);
+    const QString accent = t.inputFocusAccent;
+
     for (const Skill &s : suggestions) {
         auto *btn = new QPushButton(s.name);
         btn->setFixedHeight(20);
         btn->setCursor(Qt::PointingHandCursor);
         btn->setStyleSheet(QStringLiteral(
             "QPushButton {"
-            "  background: rgba(100, 180, 255, 0.1);"
-            "  color: #64b4ff;"
-            "  border: 1px solid rgba(100, 180, 255, 0.3);"
+            "  background: %1;"
+            "  color: %2;"
+            "  border: 1px solid %3;"
             "  border-radius: 8px;"
             "  padding: 0 10px;"
             "  font-size: 11px;"
             "}"
             "QPushButton:hover {"
-            "  background: rgba(100, 180, 255, 0.2);"
+            "  background: %4;"
             "}"
-        ));
+        ).arg(rgba(accent, 18), accent, rgba(accent, 50), rgba(accent, 35)));
         QString sid = s.id;
         connect(btn, &QPushButton::clicked, this, [this, sid]() {
             onSuggestionClicked(sid);

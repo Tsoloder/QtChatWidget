@@ -37,11 +37,61 @@ add_executable(${PROJECT_NAME} WIN32
     src/ToolRegistry.cpp
     src/LLMClient.cpp
     src/SettingsDialog.cpp
+    src/PythonProcess.cpp
+    src/SessionListPanel.cpp
     resources.qrc
 )
 
 target_include_directories(${PROJECT_NAME} PRIVATE src)
 target_link_libraries(${PROJECT_NAME} PRIVATE Qt5::Widgets Qt5::Gui Qt5::Core Qt5::Svg Qt5::Network)
+
+# Python owns the Skill runtime. Copy only runtime sources: never deploy local
+# config.json, API keys, session history, logs, tests, or __pycache__.
+set(PY_AGENT_RUNTIME_FILES
+    app.py
+    agent_loop.py
+    config.py
+    context.py
+    llm_client.py
+    logging_setup.py
+    mcp_bridge.py
+    retry.py
+    session.py
+    skill_runtime.py
+    requirements.txt
+)
+
+add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E remove -f
+            "$<TARGET_FILE_DIR:${PROJECT_NAME}>/py/agent/config.json"
+            "$<TARGET_FILE_DIR:${PROJECT_NAME}>/py/agent/agent.log"
+            "$<TARGET_FILE_DIR:${PROJECT_NAME}>/py/agent/test_skill_runtime.py"
+    COMMAND ${CMAKE_COMMAND} -E remove_directory
+            "$<TARGET_FILE_DIR:${PROJECT_NAME}>/py/agent/sessions"
+    COMMAND ${CMAKE_COMMAND} -E remove_directory
+            "$<TARGET_FILE_DIR:${PROJECT_NAME}>/py/agent/__pycache__"
+    COMMAND ${CMAKE_COMMAND} -E make_directory
+            "$<TARGET_FILE_DIR:${PROJECT_NAME}>/py/agent"
+    COMMAND ${CMAKE_COMMAND} -E make_directory
+            "$<TARGET_FILE_DIR:${PROJECT_NAME}>/resources/skills"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_SOURCE_DIR}/py/server.py"
+            "$<TARGET_FILE_DIR:${PROJECT_NAME}>/py/server.py"
+    COMMENT "Preparing Python agent runtime"
+)
+foreach(PY_AGENT_FILE IN LISTS PY_AGENT_RUNTIME_FILES)
+    add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${CMAKE_SOURCE_DIR}/py/agent/${PY_AGENT_FILE}"
+                "$<TARGET_FILE_DIR:${PROJECT_NAME}>/py/agent/${PY_AGENT_FILE}"
+    )
+endforeach()
+add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${CMAKE_SOURCE_DIR}/resources/skills"
+            "$<TARGET_FILE_DIR:${PROJECT_NAME}>/resources/skills"
+    COMMENT "Deploying built-in Skill packages"
+)
 
 # Temporary screenshot harness (offscreen render -> PNG). Not part of the app.
 add_executable(ClineScreenshot
@@ -64,6 +114,8 @@ add_executable(ClineScreenshot
     src/ToolRegistry.cpp
     src/LLMClient.cpp
     src/SettingsDialog.cpp
+    src/PythonProcess.cpp
+    src/SessionListPanel.cpp
     resources.qrc
 )
 target_include_directories(ClineScreenshot PRIVATE src)

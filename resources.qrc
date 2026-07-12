@@ -7,5 +7,6 @@
     <file alias="skills/refactor/SKILL.md">resources/skills/refactor/SKILL.md</file>
     <file alias="skills/doc-generate/SKILL.md">resources/skills/doc-generate/SKILL.md</file>
     <file alias="skills/test-generate/SKILL.md">resources/skills/test-generate/SKILL.md</file>
+    <file alias="skills/skill-creator/SKILL.md">resources/skills/skill-creator/SKILL.md</file>
   </qresource>
 </RCC>

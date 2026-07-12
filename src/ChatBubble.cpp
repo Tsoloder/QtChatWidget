@@ -13,7 +13,7 @@
 #include <QGraphicsDropShadowEffect>
 
 ChatBubble::ChatBubble(Role role, const ContentSegments &segments, QWidget *parent)
-    : QWidget(parent)
+    : QWidget(parent), m_segments(segments), m_role(role)
 {
     auto *layout = new QVBoxLayout(this);
     layout->setContentsMargins(4, 4, 4, 6);

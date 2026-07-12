@@ -4,6 +4,7 @@
 #include <QVBoxLayout>
 #include <QScrollArea>
 #include <QLabel>
+#include <QList>
 #include "ChatBubble.h"
 #include "ContentSegment.h"
 #include "Theme.h"
@@ -38,6 +39,12 @@ public:
 
     SkillManager *skillManager() const { return m_skillManager; }
 
+    // 所有已添加的消息气泡（用于导出）
+    QList<ChatBubble*> bubbles() const { return m_bubbles; }
+    // 禁用/恢复输入栏（流式期间防重复发送）
+    void setInputBusy(bool busy);
+    InputBar *inputBar() const { return m_input; }
+
 public slots:
     // 追加一条消息气泡
     void addBubble(ChatBubble::Role role, const ContentSegments &segments);
@@ -51,7 +58,7 @@ public slots:
 signals:
     // 用户在输入框点发送。宿主程序接到后通常调用 LLM，再把回复 addBubble 回来
     void messageSent(const QString &text);
-    void messageSentWithSkill(const QString &text, const QString &skillSystemPrompt);
+    void messageSentWithSkills(const QString &text, const QJsonArray &selectedSkills);
 
     // 用户在气泡内的交互
     void optionSelected(ChatBubble *bubble, int index, const QString &text);
@@ -64,9 +71,18 @@ signals:
     //   jsonPayload: 对应的 JSON 内容对象
     void actionTriggered(const QString &type, const QString &jsonPayload);
 
+    // 主题切换时发出，供 SessionListPanel/SkillPicker 联动
+    void themeChanged(ThemeId id);
+
 public slots:
     void appendStreamChunk(const QString &delta);
     void finishStream();
+    // 用解析后的 ContentSegments 替换流式纯文本（无工具调用时用）
+    void finishStreamWithSegments(const ContentSegments &segs);
+    // 加载历史消息（从会话恢复时）
+    void loadMessages(const QJsonArray &messages);
+    // 流中途失败时调用：删除流式气泡但不添加正式回复（让位给错误气泡）
+    void abortStream();
 
 private slots:
     void onSend(const QString &text);
@@ -81,6 +97,7 @@ private:
     QFrame *m_header = nullptr;
     ChatBubble *m_streamBubble = nullptr;
     QString m_streamText;
+    QList<ChatBubble*> m_bubbles;
     ThemeId m_themeId = ThemeId::OneDarkPro;
     bool m_headerVisible = true;
     SkillManager *m_skillManager = nullptr;

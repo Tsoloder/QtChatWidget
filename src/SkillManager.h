@@ -25,6 +25,9 @@ public:
     void recordUsage(const QString &skillId);
     QList<Skill> suggestRelevant(const QString &text, int maxCount = 3) const;
 
+    // Pure keyword matching (no LLM call), returns best match or invalid Skill
+    Skill matchByKeywords(const QString &text) const;
+
     // Generate a catalog of all available Skills for model routing
     QString catalogPrompt() const;
 

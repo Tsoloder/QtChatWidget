@@ -4,6 +4,7 @@
 #include <QString>
 #include <QList>
 #include "Skill.h"
+#include "Theme.h"
 
 class QTextEdit;
 class QPushButton;
@@ -22,6 +23,11 @@ public:
 
     void setSkillManager(SkillManager *manager);
     SkillManager *skillManager() const { return m_skillManager; }
+    SkillPicker *skillPicker() const { return m_skillPicker; }
+
+    // 主题切换
+    void setTheme(ThemeId id);
+    ThemeId currentTheme() const { return m_themeId; }
 
     void addActiveSkill(const Skill &skill);
     void removeActiveSkill(const QString &skillId);
@@ -33,6 +39,9 @@ public:
     QStringList combinedAllowedTools() const;
 
     void clearEdit();
+
+    // Disable input + send button during streaming to prevent aborting in-flight requests
+    void setBusy(bool busy);
 
 signals:
     void send(const QString &text);
@@ -60,6 +69,8 @@ private:
     QString skillTriggerText() const;
     bool hasActiveSkill(const QString &id) const;
     void updateSuggestionBar(const QList<Skill> &suggestions);
+    void updateThemeStyles(const Theme &t);
+    static QString rgba(const QString &hex, int alpha);
 
     QTextEdit *m_edit;
     QPushButton *m_sendBtn;
@@ -73,4 +84,5 @@ private:
     SkillManager *m_skillManager;
     QList<Skill> m_activeSkills;
     bool m_skillPickerVisible;
+    ThemeId m_themeId = ThemeId::OneDarkPro;
 };
