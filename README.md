@@ -1,6 +1,6 @@
 # ClineLikeChat — Qt + Python 混合架构 Coding Agent
 
-一个仿 VSCode Cline 插件风格的 Coding Agent，采用 **C++ Qt UI + Python FastAPI 后端** 的混合架构。Qt 端负责聊天界面、Skill 系统与主题；Python 端负责 LLM 推理、MCP 工具调用、上下文压缩与会话持久化。两端通过本地 HTTP + SSE 通信。
+一个仿 VSCode Cline 插件风格的 Coding Agent，采用 **C++ Qt UI + Python FastAPI 后端** 的混合架构。Qt 端负责聊天界面、SkillPicker、主题与进程管理；Python 端负责 Skill Runtime、LLM 推理、MCP 工具调用、上下文压缩与会话持久化。两端通过本地 HTTP + SSE 通信。
 
 集成 **Skill 系统**、**LLM 双协议客户端**、**流式输出**、**MCP 工具自动执行**、**会话持久化与历史恢复**、**上下文压缩** 等特性。支持 5 套主题，可作为一个 `QWidget` 嵌入到任意宿主程序。
 
@@ -8,7 +8,7 @@
 - 构建系统：CMake（C++）+ pip（Python 依赖）
 - 编码：所有源码 UTF-8（含 BOM），MSVC 下通过 `/utf-8` 强制按 UTF-8 编译
 - **LLM 兼容**：OpenAI / Anthropic 双协议，由 Python 后端处理流式输出（SSE）
-- **Skill 系统**：5 个内置 Skill + 用户自定义，C++ 端关键词匹配路由（无 LLM 二次调用）
+- **Skill 系统**：6 个内置 Skill + 用户自定义，Python 两阶段加载（`available_skills` 元数据 → 模型按需 `read_skill`），支持安全资源读取、工具白名单和通过对话创建 Skill
 - **MCP 工具**：通过 FastMCP 桥接，LLM 触发 tool_call 后自动执行，结果回流进同一气泡
 - **会话持久化**：左侧 SessionListPanel 列出全部会话，关闭重开程序可恢复历史
 
@@ -66,6 +66,7 @@
    │   ├─ /sessions      CRUD 会话                  │
    │   └─ /chat/stream   Agent Loop (SSE)           │
    │       ├─ agent_loop.py    LLM↔tool 循环         │
+   │       ├─ skill_runtime.py Skill 发现/读取/创建/权限 │
    │       ├─ llm_client.py    OpenAI/Anthropic 双协议 │
    │       ├─ context.py       4 层上下文压缩         │
    │       ├─ session.py       会话持久化 (atomic)   │
@@ -93,23 +94,24 @@
 | `src/InputBar.h/.cpp` | 底部输入框 + Skill 触发（`/` 弹出 SkillPicker）+ 多 Skill 叠加管理 |
 | `src/Theme.h/.cpp` | 5 套主题的颜色 token 定义 + `themeById()` 工厂 |
 | `src/ReplyParser.h/.cpp` | **模型回复解析器**。把 LLM 原始文本解析成 `ContentSegments` |
-| `src/MainWindow.h/.cpp` | 主窗口：集成 PythonProcess + LLMClient + SessionListPanel + Skill 路由 |
+| `src/MainWindow.h/.cpp` | 主窗口：集成 PythonProcess + LLMClient + SessionListPanel，并向 Python 发送结构化 Skill 选择 |
 | **Python 进程 & 会话面板** | |
 | `src/PythonProcess.h/.cpp` | QProcess 拉起 Python 后端，500ms 健康轮询，崩溃自动重启（max 3） |
 | `src/SessionListPanel.h/.cpp` | 左侧 QDockWidget：列出/新建/删除会话，点击切换 |
 | **Skill 系统** | |
 | `src/Skill.h/.cpp` | Skill 数据结构 + SkillParam 参数定义 |
-| `src/SkillManager.h/.cpp` | Skill 加载/搜索/匹配/排序/统计，`matchByKeywords()` 关键词路由 |
+| `src/SkillManager.h/.cpp` | Qt 侧 Skill 加载、安装、搜索、排序和使用统计；主要服务 SkillPicker，模型路由由 Python 负责 |
 | `src/SkillMdParser.h/.cpp` | SKILL.md 文件解析器（YAML frontmatter + 正文） |
 | `src/SkillPicker.h/.cpp` | Skill 选择器（富文本显示 + 实时过滤） |
 | `src/SkillParamsDialog.h/.cpp` | Skill 参数输入对话框 |
-| `src/ToolRegistry.h/.cpp` | 工具元数据注册 + allowed-tools 权限校验 |
+| `src/ToolRegistry.h/.cpp` | Qt 侧工具元数据；真实 `allowed-tools` 过滤与执行前二次校验位于 Python Runtime |
 | **LLM 集成（HTTP 客户端）** | |
 | `src/LLMClient.h/.cpp` | **HTTP + SSE 客户端**：POST /chat/stream，解析多行 `data:` 事件，分发 streamChunk/toolCallReceived 等信号 |
 | `src/SettingsDialog.h/.cpp` | API 配置对话框（URL/Key/Model/Type），持久化到 `config.json`，启动时 POST 给 Python |
 | **Python 后端** | |
 | `py/agent/app.py` | FastAPI 入口：/health /config /sessions CRUD /chat/stream (SSE) |
-| `py/agent/agent_loop.py` | Agent Loop：LLM→tool_call→MCP execute→tool_result→LLM，max 20 轮 |
+| `py/agent/agent_loop.py` | Agent Loop：LLM→内部 Skill 工具或 MCP 工具→tool_result→LLM，max 20 轮 |
+| `py/agent/skill_runtime.py` | SkillRegistry：发现/解析/目录注入/按需读取/安全创建/资源边界/工具权限 |
 | `py/agent/llm_client.py` | OpenAI/Anthropic 双协议流式，tool_call 分片累积 |
 | `py/agent/context.py` | TokenCounter + 4 层上下文压缩（truncate/snip/microcompact/auto-compact） |
 | `py/agent/session.py` | Session dataclass + atomic_write + CRUD |
@@ -117,7 +119,7 @@
 | `py/agent/config.py` / `retry.py` / `logging_setup.py` | 配置持久化 / 指数退避 / 日志 |
 | `py/server.py` | MCP 工具服务（示例：get_weather, get_year） |
 | **资源** | |
-| `resources/skills/*/SKILL.md` | 5 个内置 Skill 定义文件 |
+| `resources/skills/*/SKILL.md` | 6 个内置 Skill 包（含对话创建 Skill 的 `skill-creator`） |
 | `run.ps1` | 一键运行脚本（构建+启动+pycheck+pyinstall） |
 
 ### 核心数据流
@@ -522,132 +524,148 @@ ChatWidget 自带的顶部下拉框也允许用户手动切换。嵌入 DockWidg
 
 ## 九、Skill 系统
 
-本项目实现了类似 Claude Code 的 Skill 机制，通过 **system prompt 注入** 影响模型行为。
+Skill 采用 **Qt 管界面、Python 管运行时** 的路线。Qt 的 `SkillManager` 与 `SkillPicker` 负责展示、手动选择和安装入口；Python 的 `SkillRegistry` 负责发现、解析、模型路由、正文读取、附属资源读取、对话创建和工具权限。
 
-### 9.1 内置 Skill
+### 9.1 两阶段加载
 
-| Skill ID | 名称 | 用途 |
-|----------|------|------|
-| `code-review` | Code Review | 代码审查（正确性/安全/性能/可维护性/最佳实践） |
-| `refactor` | Refactor | 代码重构建议 |
-| `explain-code` | Explain Code | 代码解释 |
-| `doc-generate` | Doc Generate | 文档生成 |
-| `test-generate` | Test Generate | 测试用例生成 |
+每次发送消息时，Python 只把 Skill 的 `name`、`description` 和选中状态放入模型上下文：
 
-### 9.2 SKILL.md 格式
+```xml
+<available_skills>
+  <skill>
+    <name>code-review</name>
+    <description>Review code for bugs, security problems and regressions.</description>
+    <selected>false</selected>
+  </skill>
+</available_skills>
+```
 
-每个 Skill 是一个目录，包含 `SKILL.md` 文件：
+模型判断任务匹配后调用内部工具：
+
+```text
+read_skill(skill_id)
+```
+
+完整 `SKILL.md` 作为工具结果写入当前会话。正文要求读取附件时，再调用：
+
+```text
+read_skill_resource(skill_id, relative_path)
+```
+
+这种方式避免把所有 Skill 正文永久塞进 system prompt，也保留了可审计的读取过程。
+
+### 9.2 内置 Skill
+
+| Skill ID | 用途 |
+|----------|------|
+| `code-review` | 代码审查 |
+| `refactor` | 代码重构建议 |
+| `explain-code` | 代码解释 |
+| `doc-generate` | 文档生成 |
+| `test-generate` | 测试用例生成 |
+| `skill-creator` | 通过对话创建并安装新 Skill |
+
+内置包位于 `resources/skills/`，构建后复制到 `resources/skills/` 相对可执行文件的位置。
+
+### 9.3 用户 Skill 目录与自动发现
+
+Windows 默认用户目录为：
+
+```text
+%APPDATA%\ClineLikeChat\skills\
+```
+
+每个 Skill 必须占一个一级子目录：
+
+```text
+%APPDATA%\ClineLikeChat\skills\
+└── cpp-bug-finder\
+    ├── SKILL.md
+    └── references\
+        └── checklist.md
+```
+
+Python 在每次 `/chat/stream` 请求开始时重新扫描 Skill roots；`create_skill` 成功后也会立即 `reload()`。因此手工复制或对话创建的 Skill 会在下一条消息中进入 `available_skills`，无需重启 Python 后端。
+
+> 当前 Qt SkillPicker 仍在构造时加载列表。Python 自动路由可热发现新 Skill，但新项要立即显示在 SkillPicker 中，还需要给 Qt 增加文件监听或刷新信号；重启应用后一定会显示。
+
+### 9.4 SKILL.md 格式
 
 ```markdown
 ---
-name: code-review
-description: Review code for bugs, security, and best practices
-aliases:
-  - cr
-  - review
-tags:
-  - 审查
-  - review
-  - code
-allowed-tools:
-  - read_file
-  - search_code
-extra_params:
-  - name: severity
-    description: Review severity level
-    default: medium
-    required: true
-    type: string
+name: cpp-bug-finder
+description: >
+  Inspect C++ code for null pointers, out-of-bounds access, resource leaks and thread-safety issues.
+  Use whenever the user asks for C++ review, bug inspection, memory-safety review, or says 检查 C++、审查代码.
+allowed-tools: [read_file, search_*]
 ---
 
-You are a senior code reviewer. When reviewing code, evaluate these aspects:
-1. Correctness & Bugs
-2. Security vulnerabilities
-3. Performance issues
-4. Maintainability
-5. Best Practices
-Rank findings by severity: critical, high, medium, low.
+# C++ Bug Finder
+
+Inspect the supplied code and rank findings by severity.
 ```
 
-**字段说明**：
-- `name` / `description`：基础信息
-- `aliases`：触发别名（如 `/cr` 等价于 `/code-review`）
-- `tags`：关键词标签，用于自动匹配
-- `allowed-tools`：限制 Skill 可调用的工具
-- `extra_params`：参数定义，激活时弹出对话框让用户填写
-- 正文部分：注入到 system prompt 的指令内容
+关键字段：
 
-### 9.3 五大高级特性
+- `name`：稳定 ID，必须符合 `^[a-z0-9][a-z0-9-]{0,63}$`
+- `description`：模型路由的主要依据，应同时说明能力和触发场景
+- `allowed-tools`：可选外部 MCP 工具白名单，支持 `search_*` 形式的通配符
+- 正文：模型按需读取的操作说明
 
-#### ① Skill 参数
+附属文本资源可放在 `references/`、`scripts/`、`assets/`、`evals/` 等目录。`read_skill_resource` 会阻止绝对路径、`..` 越界、超大文件和不支持的文件类型。
 
-支持在 SKILL.md 中定义 `extra_params`，激活带参数的 Skill 时弹出对话框：
+### 9.5 手动选择与参数
 
-```cpp
-// SkillParamsDialog 收集用户输入 → Skill::resolvedSystemPrompt() 注入参数值
-Skill skill = manager.skillById("code-review");
-// 用户填入 severity=high, language=cpp
-QString prompt = skill.resolvedSystemPrompt();
-// prompt 中会包含 "severity: high\nlanguage: cpp"
+在输入框键入 `/` 打开 SkillPicker，可选择一个或多个 Skill。Qt 发送结构化信息：
+
+```json
+{
+  "selected_skills": [
+    {
+      "id": "code-review",
+      "params": {"severity": "high"}
+    }
+  ]
+}
 ```
 
-#### ② 多 Skill 叠加
+Python 从 Registry 重新读取正文，不信任 Qt 传入的正文。参数被包裹为数据，不能提升为系统指令。当前手动选择会持续保留，直到用户移除标签。
 
-同时激活多个 Skill，system prompt 自动拼接：
+### 9.6 工具权限
 
-```cpp
-// InputBar 维护 QList<Skill> m_activeSkills
-inputBar->addActiveSkill(codeReviewSkill);
-inputBar->addActiveSkill(refactorSkill);
-QString combined = inputBar->combinedSystemPrompt();
-// = codeReview prompt + "\n\n---\n\n" + refactor prompt
+加载含 `allowed-tools` 的 Skill 后，Python 会执行两层控制：
+
+1. 发送模型前过滤 MCP tool schemas；
+2. 实际调用 `mcp.call_tool()` 前再次检查。
+
+即使模型或供应商返回未授权的工具调用，后端也会返回 `Tool blocked by active Skill policy`，不会执行该工具。`read_skill`、`read_skill_resource` 和 `create_skill` 属于内部 Runtime 工具。
+
+### 9.7 通过对话创建 Skill
+
+直接输入：
+
+```text
+帮我创建一个 cpp-bug-finder Skill，检查空指针、越界、资源泄漏和线程安全。
 ```
 
-输入框上方会显示所有已激活 Skill 的标签，可逐个移除。
+模型会匹配 `skill-creator`，读取规范，然后调用：
 
-#### ③ Skill 路由（关键词匹配）
-
-用户发送消息时，C++ 端 `SkillManager::matchByKeywords(text)` 在所有 Skill 中按 name(10 分)/id(8 分)/alias(8 分)/tag(4 分) 计分，分数 ≥ 4 且为最高分时自动激活该 Skill 的 system prompt，**无需 LLM 二次调用**：
-
-```cpp
-// MainWindow.cpp
-Skill matched = m_chat->skillManager()->matchByKeywords(text);
-QString sysPrompt = matched.isValid() ? matched.resolvedSystemPrompt() : QString();
-m_llm->sendMessage(text, sysPrompt, m_currentSessionId);
+```json
+{
+  "skill_id": "cpp-bug-finder",
+  "files": {
+    "SKILL.md": "...",
+    "references/checklist.md": "..."
+  },
+  "overwrite": false
+}
 ```
 
-用户也可在输入框键入 `/` 手动激活 Skill（`SkillPicker` 弹出），手动激活优先级高于关键词匹配。
+`create_skill` 只写入 Qt 提供的用户 Skill 根目录，并限制：最多 64 个文本文件、单文件 1 MiB、总计 5 MiB、安全相对路径、`SKILL.md` 必填、声明 ID 必须一致。同名 Skill 默认拒绝覆盖；只有用户明确要求时才应使用 `overwrite: true`。
 
-#### ④ 工具调用集成（MCP 自动执行）
+### 9.8 安装完整目录
 
-Python 后端通过 `mcp_bridge.py` 连接 `py/server.py`（FastMCP stdio 协议）。LLM 在回复中触发 `tool_call` 时，后端自动执行对应工具并把 `tool_result` 回灌给 LLM，循环直到 LLM 不再调用工具（max 20 轮）。整个流程**无需用户审批**，C++ 端通过 SSE 事件在同一个流式气泡内显示 `🔧 调用工具 name(args)` 和 `→ 结果`。
-
-`ToolRegistry` 仍保留用于 Skill 的 `allowed-tools` 元数据校验（提示词层面约束 LLM），但实际工具执行由 Python MCP 桥接完成。
-
-#### ⑤ 使用频率排序
-
-`SkillManager` 记录每个 Skill 的 `useCount`，持久化到 `skill_usage.json`：
-
-```cpp
-manager.recordUsage("code-review");  // useCount++
-QList<Skill> sorted = manager.allSkillsSorted();  // 按使用频率降序
-```
-
-SkillPicker 中常用 Skill 自动置顶显示。
-
-### 9.4 添加自定义 Skill
-
-1. 在 `resources/skills/` 下新建目录，如 `my-skill/`
-2. 创建 `SKILL.md` 文件（参考 9.2 格式）
-3. 在 `resources.qrc` 中注册：`<file>resources/skills/my-skill/SKILL.md</file>`
-4. 重新构建——新 Skill 自动进入路由候选列表
-
-### 9.5 触发方式
-
-| 方式 | 操作 | 说明 |
-|------|------|------|
-| **手动触发** | 输入 `/` → 弹出 SkillPicker → 选择 | 跳过关键词匹配，直接使用选中 Skill（可叠加多个） |
-| **关键词自动匹配** | 直接输入消息（不带 `/`） | `matchByKeywords` 按 name/id/alias/tag 计分，≥4 分自动激活 |
+菜单 **File → Install Skill...** 支持选择完整目录或单个 `SKILL.md`。优先选择目录，以保留 `references/`、`scripts/` 与 `assets/`。目录安装忽略符号链接，并限制文件数、单文件大小和包总大小。
 
 ---
 
@@ -666,10 +684,25 @@ C++ 端的 `LLMClient` 不再直接调用 LLM API，而是作为 **HTTP + SSE �
 | `/sessions/{id}/clear` | POST | 清空会话消息 |
 | `/chat/stream` | POST | **核心**：Agent Loop + SSE 流式输出 |
 
-`POST /chat/stream` 请求体：
+`POST /chat/stream` 请求体示例：
+
 ```json
-{"session_id": "uuid", "message": "用户输入", "system_prompt": "Skill 系统提示词（可选）"}
+{
+  "session_id": "uuid",
+  "message": "用户输入",
+  "system_prompt": "应用级基础提示词（可选）",
+  "selected_skills": [
+    {"id": "code-review", "params": {"severity": "high"}}
+  ],
+  "skill_roots": [
+    "D:/app/resources/skills",
+    "C:/Users/Alice/AppData/Roaming/ClineLikeChat/skills"
+  ],
+  "writable_skill_root": "C:/Users/Alice/AppData/Roaming/ClineLikeChat/skills"
+}
 ```
+
+真实绝对路径由 Qt 的 `QStandardPaths::AppDataLocation` 在运行时决定。Python 只允许 `create_skill` 写入 `writable_skill_root`。
 
 ### 10.2 SSE 事件类型
 
@@ -817,7 +850,7 @@ add_executable(ClineLikeChat WIN32
     src/PythonProcess.cpp       # Python 进程管理
     src/SessionListPanel.cpp    # 会话列表面板
     src/Skill.cpp               # Skill 数据结构
-    src/SkillManager.cpp        # Skill 管理 + matchByKeywords
+    src/SkillManager.cpp        # Qt 侧 Skill 安装/搜索/展示
     src/SkillMdParser.cpp       # SKILL.md 解析
     src/SkillPicker.cpp         # Skill 选择器
     src/SkillParamsDialog.cpp   # Skill 参数对话框
@@ -848,7 +881,7 @@ cmake --build . --config Release
 - MSVC 下加 `/utf-8` 编译选项
 - 链接 `Qt5::Widgets Qt5::Gui Qt5::Core Qt5::Svg Qt5::Network`（Network 用于 LLMClient HTTP 通信）
 - 添加 `resources.qrc` 到资源文件
-- Python 后端目录 `py/agent/` 需与 exe 路径关系正确（开发态 exe 在 `build/Release/`，会回溯两级查找 `../../py/agent/app.py`）
+- Python 后端目录 `py/agent/` 需与 exe 路径关系正确。CMake 的 POST_BUILD 会把运行时白名单文件和内置 Skill 包复制到目标目录，不会复制 API 配置、日志、会话历史、测试和 `__pycache__`
 
 然后在你的代码里 `#include "ChatWidget.h"` 即可使用。
 
